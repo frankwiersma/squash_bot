@@ -21,8 +21,8 @@ This project is a Telegram bot designed to automate the process of reserving squ
 
 1. Clone the repository:
     ```sh
-    git clone https://github.com/yourusername/squash-reservation-bot.git
-    cd squash-reservation-bot
+    git clone https://github.com/frankwiersma/squash_bot.git
+    cd squash_bot
     ```
 
 2. Install the required libraries:
