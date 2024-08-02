@@ -137,9 +137,11 @@ async def reserve_slot(session, selected_slot, date):
     return f"Reservation failed! Status code: {response.status_code}", None, None
 
 async def start(update: Update, context: CallbackContext) -> None:
+    logger.info("Start command received.")
     await show_main_menu(update, context)
 
 async def show_main_menu(update: Update, context: CallbackContext):
+    logger.info("Showing main menu.")
     keyboard = [
         [InlineKeyboardButton("Reserve a slot", callback_data="command_reserve")],
         [InlineKeyboardButton("Show current reservations", callback_data="command_show_reservations")],
@@ -155,10 +157,12 @@ async def show_main_menu(update: Update, context: CallbackContext):
 
 async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
+    logger.info(f"Button pressed with data: {query.data}")
     await query.answer()
 
     if query.data.startswith('command_'):
         command = query.data.split('_')[1]
+        logger.info(f"Command received: {command}")
         if command == 'reserve':
             await reserve(update, context)
         elif command == 'show_reservations':
@@ -169,12 +173,14 @@ async def button(update: Update, context: CallbackContext) -> None:
             await help_command(update, context)
     elif query.data.startswith('date_'):
         context.user_data['selected_date'] = selected_date = query.data.split('_')[1]
+        logger.info(f"Date selected: {selected_date}")
         periods = ["morning", "afternoon", "evening"]
         keyboard = [[InlineKeyboardButton(period.capitalize(), callback_data=f'period_{period}')] for period in periods]
         await query.edit_message_text(text=f"Selected date: {selected_date}\nSelect a period:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif query.data.startswith('period_'):
         selected_period = query.data.split('_')[1]
         context.user_data['selected_period'] = selected_period
+        logger.info(f"Period selected: {selected_period}")
         session = await login()
 
         if session:
@@ -194,6 +200,7 @@ async def button(update: Update, context: CallbackContext) -> None:
         filtered_slots = context.user_data.get('filtered_slots')
         if filtered_slots and 0 <= slot_index < len(filtered_slots):
             selected_slot = filtered_slots[slot_index]
+            logger.info(f"Slot selected: {selected_slot}")
             await reserve_slot_command(update, context, selected_slot)
         else:
             await query.edit_message_text(text="Invalid slot selection. Please try again.")
