@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
-from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
 import os
 
@@ -180,17 +180,18 @@ async def button(update: Update, context: CallbackContext) -> None:
         await command_map.get(query.data, lambda u, c: None)(update, context)
 
 async def reserve_slot_command(update: Update, context: CallbackContext, selected_slot=None) -> None:
+    query = update.callback_query
     session = await login()
     if session:
         if selected_slot:
             result, start_time, end_time = await reserve_slot(session, selected_slot, context.user_data['selected_date'])
-            await update.callback_query.edit_message_text(text=result)
+            await query.edit_message_text(text=result)
             if start_time and end_time:
-                await send_ics_file(update.callback_query, context.user_data['selected_date'], start_time, end_time)
+                await send_ics_file(query, context.user_data['selected_date'], start_time, end_time)
         else:
-            await update.message.reply_text('Please select a slot using the buttons provided after choosing a date and period.')
+            await query.edit_message_text(text='Please select a slot using the buttons provided after choosing a date and period.')
     else:
-        await update.callback_query.edit_message_text(text="Login failed. Please try again later.")
+        await query.edit_message_text(text="Login failed. Please try again later.")
 
 async def send_ics_file(query: CallbackQuery, date: str, start_time: str, end_time: str):
     start_time_ics = datetime.strptime(f"{date} {start_time}", '%Y-%m-%d %H:%M')
@@ -213,7 +214,10 @@ END:VCALENDAR"""
     with open(ics_file_path, 'w') as file:
         file.write(ics_content)
 
-    await query.message.reply_document(open(ics_file_path, 'rb'))
+    with open(ics_file_path, 'rb') as ics_file:
+        await query.message.reply_document(document=ics_file, filename="squash_reservation.ics")
+
+    os.remove(ics_file_path)  # Clean up the temporary file
 
 async def get_future_reservations(session):
     response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
