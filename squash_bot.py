@@ -294,7 +294,7 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
         else:
             await send_message("❌ Login failed. Please try again later.")
     except Exception as e:
-        await send_message("⚠️ An error occurred while fetching reservations. Please try again later.")
+        await send_message("⚠️ An error occurred while fetching reservations. Please try again later!")
     
     await asyncio.sleep(10)
     await send_message("What would you like to do next?")
