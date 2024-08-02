@@ -1,6 +1,7 @@
 import asyncio
 import requests
 import logging
+import sys  # Add this import
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
