@@ -134,7 +134,7 @@ async def button(update: Update, context: CallbackContext) -> None:
 
     try:
         if query.data.startswith('command_'):
-            command = query.data.split('_')[1]
+            command = query.data[8:]  # Remove 'command_' prefix
             logger.info(f"Command received: {command}")
             print(f"Debug: Command received: {command}")
             if command == 'reserve':
@@ -202,7 +202,6 @@ async def button(update: Update, context: CallbackContext) -> None:
         logger.error(f"Error in button function: {str(e)}", exc_info=True)
         print(f"Debug: Error in button function: {str(e)}")
         await query.edit_message_text("An error occurred. Please try again later.")
-        await show_main_menu(update, context)
 
 async def reserve(update: Update, context: CallbackContext, page=0) -> None:
     print("Debug: Entering reserve function")
