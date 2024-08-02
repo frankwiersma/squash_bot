@@ -298,6 +298,43 @@ async def get_future_reservations(session):
         print(f"Debug: Error fetching future reservations: {str(e)}")
         return []
 
+async def cancel_reservation(session, reservation_id):
+    print(f"Debug: Entering cancel_reservation function for reservation {reservation_id}")
+    cancel_url = f"{BASE_URL}{reservation_id}/cancel"
+    logger.info(f"Attempting to cancel reservation: {reservation_id}. URL: GET {cancel_url}")
+    print(f"Debug: Attempting to cancel reservation: {reservation_id}. URL: GET {cancel_url}")
+    response = session.get(cancel_url, headers=HEADERS)
+    if response.status_code == 200:
+        logger.info(f"Cancellation page for {reservation_id} fetched successfully")
+        print(f"Debug: Cancellation page for {reservation_id} fetched successfully")
+        soup = BeautifulSoup(response.content, 'html.parser')
+        token = soup.find("input", {"name": "_token"})
+        if token:
+            logger.info(f"CSRF token found for {reservation_id}")
+            print(f"Debug: CSRF token found for {reservation_id}")
+            logger.info(f"Confirming cancellation. URL: POST {cancel_url}")
+            print(f"Debug: Confirming cancellation. URL: POST {cancel_url}")
+            confirm_response = session.post(cancel_url, headers=HEADERS, data={
+                '_token': token.get("value"),
+                'confirmed': '1'
+            })
+            if confirm_response.status_code == 200:
+                logger.info(f"Reservation {reservation_id} cancelled successfully")
+                print(f"Debug: Reservation {reservation_id} cancelled successfully")
+                return "Reservation cancelled successfully."
+            else:
+                logger.error(f"Failed to cancel reservation {reservation_id}. Status code: {confirm_response.status_code}")
+                print(f"Debug: Failed to cancel reservation {reservation_id}. Status code: {confirm_response.status_code}")
+                return f"Failed to cancel reservation! Status code: {confirm_response.status_code}"
+        else:
+            logger.error(f"CSRF token not found for {reservation_id}")
+            print(f"Debug: CSRF token not found for {reservation_id}")
+            return "Failed to cancel reservation: CSRF token not found"
+    else:
+        logger.error(f"Failed to fetch cancellation page for {reservation_id}. Status code: {response.status_code}")
+        print(f"Debug: Failed to fetch cancellation page for {reservation_id}. Status code: {response.status_code}")
+    return f"Failed to initiate cancellation! Status code: {response.status_code}"
+
 async def cancel_all_command(update: Update, context: CallbackContext) -> None:
     print("Debug: Entered cancel_all_command function")
     logger.info("Entered cancel_all_command function")
@@ -337,58 +374,12 @@ async def cancel_all_command(update: Update, context: CallbackContext) -> None:
     except Exception as e:
         print(f"Debug: Error in cancel_all_command: {str(e)}")
         logger.error(f"Error in cancel_all_command: {str(e)}", exc_info=True)
-        await query.edit_message_text("An error occurred while canceling reservations. Please try again later.")
+        await query.edit_message_text(f"An error occurred while canceling reservations: {str(e)}. Please try again later.")
     
     print("Debug: Finished cancel_all_command, waiting before showing main menu")
     logger.info("Finished cancel_all_command, waiting before showing main menu")
     await asyncio.sleep(5)  # Wait for 5 seconds
     await query.message.reply_text("What would you like to do next?")
-    await show_main_menu(update, context)
-
-async def cancel_all_command(update: Update, context: CallbackContext) -> None:
-    print("Debug: Entered cancel_all_command function")
-    logger.info("Entered cancel_all_command function")
-    query = update.callback_query
-
-    try:
-        print("Debug: Attempting to login for cancel_all_command")
-        logger.info("Attempting to login for cancel_all_command")
-        session = await login()
-        if session:
-            print("Debug: Login successful, proceeding to cancel reservations")
-            logger.info("Login successful, proceeding to cancel reservations")
-            reservations = await get_future_reservations(session)
-            print(f"Debug: Found {len(reservations)} reservations to cancel")
-            logger.info(f"Found {len(reservations)} reservations to cancel")
-            if reservations:
-                results = []
-                for reservation in reservations:
-                    print(f"Debug: Attempting to cancel reservation: {reservation['id']}")
-                    logger.info(f"Attempting to cancel reservation: {reservation['id']}")
-                    result = await cancel_reservation(session, reservation['id'])
-                    print(f"Debug: Cancellation result for {reservation['id']}: {result}")
-                    logger.info(f"Cancellation result for {reservation['id']}: {result}")
-                    results.append(f"Reservation on {reservation['date']} at {reservation['start_time']}: {result}")
-                result_text = "\n".join(results)
-                print("Debug: Sending cancellation results to user")
-                logger.info("Sending cancellation results to user")
-                await query.edit_message_text(f"Cancellation results:\n\n{result_text}")
-            else:
-                print("Debug: No upcoming reservations found")
-                logger.info("No upcoming reservations found")
-                await query.edit_message_text("No upcoming reservations found.")
-        else:
-            print("Debug: Login failed in cancel_all_command")
-            logger.error("Login failed in cancel_all_command")
-            await query.edit_message_text("Login failed. Unable to cancel reservations.")
-    except Exception as e:
-        print(f"Debug: Error in cancel_all_command: {str(e)}")
-        logger.error(f"Error in cancel_all_command: {str(e)}", exc_info=True)
-        await query.edit_message_text("An error occurred while canceling reservations. Please try again later.")
-    
-    print("Debug: Finished cancel_all_command, showing main menu")
-    logger.info("Finished cancel_all_command, showing main menu")
-    await asyncio.sleep(3)
     await show_main_menu(update, context)
 
 async def help_command(update: Update, context: CallbackContext) -> None:
