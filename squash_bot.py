@@ -276,10 +276,12 @@ async def cancel_reservation(session, reservation_id):
 async def cancel_all_command(update: Update, context: CallbackContext) -> None:
     session = await login()
     if session:
+        logger.info("Canceling all future reservations.")
         results = [await cancel_reservation(session, reservation_id) for reservation_id in await get_future_reservations(session)]
-        await update.message.reply_text("\n".join(results) if results else "No upcoming reservations found.")
+        await update.callback_query.edit_message_text("\n".join(results) if results else "No upcoming reservations found.")
     else:
-        await update.message.reply_text("Login failed.")
+        logger.error("Login failed.")
+        await update.callback_query.edit_message_text("Login failed.")
     await show_main_menu(update, context)
 
 async def help_command(update: Update, context: CallbackContext) -> None:
@@ -356,4 +358,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
