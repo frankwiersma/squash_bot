@@ -132,11 +132,11 @@ async def button(update: Update, context: CallbackContext) -> None:
         else:
             raise
 
-    if query.data.startswith('command_'):
-        command = query.data.split('_')[1]
-        logger.info(f"Command received: {command}")
-        print(f"Debug: Command received: {command}")
-        try:
+    try:
+        if query.data.startswith('command_'):
+            command = query.data.split('_')[1]
+            logger.info(f"Command received: {command}")
+            print(f"Debug: Command received: {command}")
             if command == 'reserve':
                 await reserve(update, context)
             elif command == 'show_reservations':
@@ -149,50 +149,60 @@ async def button(update: Update, context: CallbackContext) -> None:
                 await cancel_all_command(update, context)
             elif command == 'help':
                 await help_command(update, context)
-        except Exception as e:
-            logger.error(f"Error executing command {command}: {str(e)}", exc_info=True)
-            print(f"Debug: Error executing command {command}: {str(e)}")
-            await query.edit_message_text(f"An error occurred while executing the {command} command. Please try again later.")
-    elif query.data.startswith('date_'):
-        context.user_data['selected_date'] = selected_date = query.data.split('_')[1]
-        logger.info(f"Date selected: {selected_date}")
-        print(f"Debug: Date selected: {selected_date}")
-        periods = ["morning", "afternoon", "evening"]
-        keyboard = [[InlineKeyboardButton(period.capitalize(), callback_data=f'period_{period}')] for period in periods]
-        await query.edit_message_text(text=f"Selected date: {selected_date}\nSelect a period:", reply_markup=InlineKeyboardMarkup(keyboard))
-    elif query.data.startswith('page_'):
-        page = int(query.data.split('_')[1])
-        await reserve(update, context, page)
-    elif query.data.startswith('period_'):
-        selected_period = query.data.split('_')[1]
-        context.user_data['selected_period'] = selected_period
-        logger.info(f"Period selected: {selected_period}")
-        print(f"Debug: Period selected: {selected_period}")
-        session = await login()
-
-        if session:
-            slots = await get_slots(session, context.user_data['selected_date'])
-            slots_text, filtered_slots, keyboard = await display_slots(slots, selected_period, context.user_data['selected_date'])
-            context.user_data['filtered_slots'] = filtered_slots
-            if keyboard:
-                await query.edit_message_text(text=slots_text, reply_markup=keyboard)
             else:
-                await query.edit_message_text(text=slots_text)
+                logger.warning(f"Unknown command: {command}")
+                print(f"Debug: Unknown command: {command}")
+                await query.edit_message_text(f"Unknown command: {command}")
+        elif query.data.startswith('date_'):
+            context.user_data['selected_date'] = selected_date = query.data.split('_')[1]
+            logger.info(f"Date selected: {selected_date}")
+            print(f"Debug: Date selected: {selected_date}")
+            periods = ["morning", "afternoon", "evening"]
+            keyboard = [[InlineKeyboardButton(period.capitalize(), callback_data=f'period_{period}')] for period in periods]
+            await query.edit_message_text(text=f"Selected date: {selected_date}\nSelect a period:", reply_markup=InlineKeyboardMarkup(keyboard))
+        elif query.data.startswith('page_'):
+            page = int(query.data.split('_')[1])
+            await reserve(update, context, page)
+        elif query.data.startswith('period_'):
+            selected_period = query.data.split('_')[1]
+            context.user_data['selected_period'] = selected_period
+            logger.info(f"Period selected: {selected_period}")
+            print(f"Debug: Period selected: {selected_period}")
+            session = await login()
+
+            if session:
+                slots = await get_slots(session, context.user_data['selected_date'])
+                slots_text, filtered_slots, keyboard = await display_slots(slots, selected_period, context.user_data['selected_date'])
+                context.user_data['filtered_slots'] = filtered_slots
+                if keyboard:
+                    await query.edit_message_text(text=slots_text, reply_markup=keyboard)
+                else:
+                    await query.edit_message_text(text=slots_text)
+                    await show_main_menu(update, context)
+            else:
+                await query.edit_message_text(text="Login failed.")
+                await show_main_menu(update, context)
+        elif query.data.startswith('slot_'):
+            slot_index = int(query.data.split('_')[1])
+            filtered_slots = context.user_data.get('filtered_slots')
+            if filtered_slots and 0 <= slot_index < len(filtered_slots):
+                selected_slot = filtered_slots[slot_index]
+                logger.info(f"Slot selected: {selected_slot}")
+                print(f"Debug: Slot selected: {selected_slot}")
+                await reserve_slot_command(update, context, selected_slot)
+            else:
+                await query.edit_message_text(text="Invalid slot selection. Please try again.")
                 await show_main_menu(update, context)
         else:
-            await query.edit_message_text(text="Login failed.")
+            logger.warning(f"Unexpected callback data: {query.data}")
+            print(f"Debug: Unexpected callback data: {query.data}")
+            await query.edit_message_text("An unexpected error occurred. Please try again.")
             await show_main_menu(update, context)
-    elif query.data.startswith('slot_'):
-        slot_index = int(query.data.split('_')[1])
-        filtered_slots = context.user_data.get('filtered_slots')
-        if filtered_slots and 0 <= slot_index < len(filtered_slots):
-            selected_slot = filtered_slots[slot_index]
-            logger.info(f"Slot selected: {selected_slot}")
-            print(f"Debug: Slot selected: {selected_slot}")
-            await reserve_slot_command(update, context, selected_slot)
-        else:
-            await query.edit_message_text(text="Invalid slot selection. Please try again.")
-            await show_main_menu(update, context)
+    except Exception as e:
+        logger.error(f"Error in button function: {str(e)}", exc_info=True)
+        print(f"Debug: Error in button function: {str(e)}")
+        await query.edit_message_text("An error occurred. Please try again later.")
+        await show_main_menu(update, context)
 
 async def reserve(update: Update, context: CallbackContext, page=0) -> None:
     print("Debug: Entering reserve function")
@@ -387,7 +397,13 @@ async def help_command(update: Update, context: CallbackContext) -> None:
 async def show_reservations(update: Update, context: CallbackContext) -> None:
     print("Debug: Entered show_reservations function")
     logger.info("Entered show_reservations function")
-    query = update.callback_query
+    
+    # Determine if this is a callback query or a direct command
+    if update.callback_query:
+        query = update.callback_query
+        send_message = query.edit_message_text
+    else:
+        send_message = lambda text, **kwargs: context.bot.send_message(chat_id=update.effective_chat.id, text=text, **kwargs)
 
     try:
         print("Debug: Attempting to login for show_reservations")
@@ -412,19 +428,19 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
                     )
                 print("Debug: Sending reservation information to user")
                 logger.info("Sending reservation information to user")
-                await query.edit_message_text(reservation_text)
+                await send_message(reservation_text)
             else:
                 print("Debug: No upcoming reservations found")
                 logger.info("No upcoming reservations found")
-                await query.edit_message_text("You have no upcoming reservations.")
+                await send_message("You have no upcoming reservations.")
         else:
             print("Debug: Login failed in show_reservations")
             logger.error("Login failed in show_reservations")
-            await query.edit_message_text("Login failed. Please try again later.")
+            await send_message("Login failed. Please try again later.")
     except Exception as e:
         print(f"Debug: Error in show_reservations: {str(e)}")
         logger.error(f"Error in show_reservations: {str(e)}", exc_info=True)
-        await query.edit_message_text("An error occurred while fetching reservations. Please try again later.")
+        await send_message("An error occurred while fetching reservations. Please try again later.")
     
     print("Debug: Finished show_reservations, showing main menu")
     logger.info("Finished show_reservations, showing main menu")
