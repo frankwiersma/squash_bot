@@ -8,7 +8,7 @@ import os
 from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL, CHAT_ID
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
-application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).job_queue(JobQueue()).build()
 application.job_queue = JobQueue()
 application.job_queue.set_application(application)
 
