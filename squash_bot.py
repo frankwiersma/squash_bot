@@ -186,15 +186,15 @@ async def reserve_slot_command(update: Update, context: CallbackContext, selecte
             result, start_time, end_time = await reserve_slot(session, selected_slot, context.user_data['selected_date'])
             await update.callback_query.edit_message_text(text=result)
             if start_time and end_time:
-                await send_ics_file(update, context.user_data['selected_date'], start_time, end_time)
+                await send_ics_file(update.callback_query, context.user_data['selected_date'], start_time, end_time)
         else:
             await update.message.reply_text('Please select a slot using the buttons provided after choosing a date and period.')
     else:
         await update.callback_query.edit_message_text(text="Login failed. Please try again later.")
 
-async def send_ics_file(update: Update, date: str, start_time: str, end_time: str):
-    start_time_ics = (datetime.strptime(start_time, '%H:%M') - timedelta(hours=2)).strftime('%H:%M')
-    end_time_ics = (datetime.strptime(end_time, '%H:%M') - timedelta(hours=2)).strftime('%H:%M')
+async def send_ics_file(query: CallbackQuery, date: str, start_time: str, end_time: str):
+    start_time_ics = datetime.strptime(f"{date} {start_time}", '%Y-%m-%d %H:%M')
+    end_time_ics = datetime.strptime(f"{date} {end_time}", '%Y-%m-%d %H:%M')
 
     ics_content = f"""BEGIN:VCALENDAR
 VERSION:2.0
@@ -202,8 +202,8 @@ PRODID:-//Your Organization//NONSGML v1.0//EN
 BEGIN:VEVENT
 UID:{datetime.now().strftime('%Y%m%dT%H%M%SZ')}@yourdomain.com
 DTSTAMP:{datetime.now().strftime('%Y%m%dT%H%M%SZ')}
-DTSTART:{date.replace('-', '')}T{start_time_ics.replace(':', '')}00Z
-DTEND:{date.replace('-', '')}T{end_time_ics.replace(':', '')}00Z
+DTSTART:{start_time_ics.strftime('%Y%m%dT%H%M%S')}
+DTEND:{end_time_ics.strftime('%Y%m%dT%H%M%S')}
 SUMMARY:Squash
 DESCRIPTION:Squash Reservation at Allinn Baanreserveren
 END:VEVENT
@@ -213,7 +213,7 @@ END:VCALENDAR"""
     with open(ics_file_path, 'w') as file:
         file.write(ics_content)
 
-    await update.message.reply_document(open(ics_file_path, 'rb'))
+    await query.message.reply_document(open(ics_file_path, 'rb'))
 
 async def get_future_reservations(session):
     response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
