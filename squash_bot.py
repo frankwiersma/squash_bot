@@ -285,12 +285,12 @@ async def cancel_reservation(session, reservation_id):
                 'confirmed': '1'
             })
             if confirm_response.status_code == 200:
-                return "Reservation cancelled successfully."
+                return "✅ Reservation cancelled successfully."
             else:
-                return f"Failed to cancel reservation! Status code: {confirm_response.status_code}"
+                return f"❌ Failed to cancel reservation! Status code: {confirm_response.status_code}"
         else:
-            return "Failed to cancel reservation: CSRF token not found"
-    return f"Failed to initiate cancellation! Status code: {response.status_code}"
+            return "❌ Failed to cancel reservation: CSRF token not found"
+    return f"❌ Failed to initiate cancellation! Status code: {response.status_code}"
 
 async def cancel_all_command(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -303,18 +303,18 @@ async def cancel_all_command(update: Update, context: CallbackContext) -> None:
                 results = []
                 for reservation in reservations:
                     result = await cancel_reservation(session, reservation['id'])
-                    results.append(f"Reservation on {reservation['date']} at {reservation['start_time']}: {result}")
+                    results.append(f"📅 Reservation on {reservation['date']} at {reservation['start_time']}: {result}")
                 result_text = "\n".join(results)
-                await query.edit_message_text(f"Cancellation results:\n\n{result_text}")
+                await query.edit_message_text(f"🗑️ Cancellation results:\n\n{result_text}")
             else:
-                await query.edit_message_text("No upcoming reservations found.")
+                await query.edit_message_text("📅 No upcoming reservations found.")
         else:
-            await query.edit_message_text("Login failed. Unable to cancel reservations.")
+            await query.edit_message_text("❌ Login failed. Unable to cancel reservations.")
     except Exception as e:
-        await query.edit_message_text(f"An error occurred while canceling reservations: {str(e)}. Please try again later.")
+        await query.edit_message_text(f"⚠️ An error occurred while canceling reservations: {str(e)}. Please try again later.")
     
     await asyncio.sleep(10)
-    await query.message.reply_text("What would you like to do next?")
+    await query.message.reply_text("🤔 What would you like to do next?")
     await show_main_menu(update, context)
         
 async def show_reservations(update: Update, context: CallbackContext) -> None:
