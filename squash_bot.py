@@ -1,3 +1,4 @@
+import asyncio
 import requests
 import logging
 from bs4 import BeautifulSoup
@@ -8,7 +9,6 @@ import os
 
 from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL, CHAT_ID
 
-# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -257,7 +257,8 @@ async def get_future_reservations(session):
     response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
     if response.status_code == 200:
         logger.info("Future reservations fetched successfully.")
-        return [a['href'] for a in BeautifulSoup(response.content, 'html.parser').select('a.ajaxlink') if '/reservations/' in a['href']]
+        soup = BeautifulSoup(response.content, 'html.parser')
+        return [a['href'] for a in soup.select('a.ajaxlink') if '/reservations/' in a['href']]
     else:
         logger.error(f"Failed to fetch future reservations with status code: {response.status_code}")
     return []
@@ -269,26 +270,39 @@ async def cancel_reservation(session, reservation_id):
     if response.status_code == 200:
         logger.info("Cancellation page fetched successfully.")
         soup = BeautifulSoup(response.content, 'html.parser')
-        confirm_response = session.post(cancel_url, headers=HEADERS, data={'_token': soup.find("input", {"name": "_token"}).get("value"), 'confirmed': '1'})
+        confirm_response = session.post(cancel_url, headers=HEADERS, data={
+            '_token': soup.find("input", {"name": "_token"}).get("value"),
+            'confirmed': '1'
+        })
         if confirm_response.status_code == 200:
             logger.info("Reservation cancelled successfully.")
-            return "Reservation cancelled successfully."
+            return f"Reservation {reservation_id} cancelled successfully."
         else:
             logger.error(f"Failed to cancel reservation! Status code: {confirm_response.status_code}")
-            return f"Failed to cancel reservation! Status code: {confirm_response.status_code}"
+            return f"Failed to cancel reservation {reservation_id}! Status code: {confirm_response.status_code}"
     else:
         logger.error(f"Failed to initiate cancellation! Status code: {response.status_code}")
-    return f"Failed to initiate cancellation! Status code: {response.status_code}"
+    return f"Failed to initiate cancellation for {reservation_id}! Status code: {response.status_code}"
 
 async def cancel_all_command(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+
     session = await login()
     if session:
         logger.info("Canceling all future reservations.")
-        results = [await cancel_reservation(session, reservation_id) for reservation_id in await get_future_reservations(session)]
-        await update.callback_query.edit_message_text("\n".join(results) if results else "No upcoming reservations found.")
+        reservations = await get_future_reservations(session)
+        if reservations:
+            results = [await cancel_reservation(session, reservation_id) for reservation_id in reservations]
+            result_text = "\n".join(results)
+            await query.edit_message_text(f"Cancellation results:\n\n{result_text}")
+        else:
+            await query.edit_message_text("No upcoming reservations found.")
     else:
         logger.error("Login failed.")
-        await update.callback_query.edit_message_text("Login failed.")
+        await query.edit_message_text("Login failed. Unable to cancel reservations.")
+    
+    await asyncio.sleep(3)
     await show_main_menu(update, context)
 
 async def help_command(update: Update, context: CallbackContext) -> None:
@@ -341,7 +355,7 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
     await show_main_menu(update, context)
 
 async def send_initial_message(context: CallbackContext):
-    chat_id = context.job.data  # This will be your chat ID from credentials.py
+    chat_id = context.job.data
     try:
         message_text = 'Welcome! What would you like to do?'
         keyboard = [
@@ -357,8 +371,6 @@ async def send_initial_message(context: CallbackContext):
 def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
-    
-    # Schedule the initial message
     application.job_queue.run_once(send_initial_message, when=1, data=CHAT_ID)
     
     application.run_polling()
