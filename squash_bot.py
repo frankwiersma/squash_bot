@@ -119,7 +119,7 @@ async def reserve_slot(session, selected_slot, date):
 async def start(update: Update, context: CallbackContext) -> None:
     await show_main_menu(update, context)
 
-async def show_main_menu(bot, chat_id):
+async def show_main_menu(update: Update, context: CallbackContext):
     keyboard = [
         [InlineKeyboardButton("Reserve a slot", callback_data="command_reserve")],
         [InlineKeyboardButton("Show current reservations", callback_data="command_show_reservations")],
@@ -128,7 +128,10 @@ async def show_main_menu(bot, chat_id):
     ]
     message_text = 'Welcome! What would you like to do?'
     
-    await bot.send_message(chat_id=chat_id, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
+    if update.message:
+        await update.message.reply_text(text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -282,8 +285,14 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
 async def send_initial_message(context: CallbackContext):
     chat_id = context.job.data  # This will be your chat ID from credentials.py
     try:
-        # Send the main menu to your chat
-        await show_main_menu(context.bot, chat_id)
+        message_text = 'Welcome! What would you like to do?'
+        keyboard = [
+            [InlineKeyboardButton("Reserve a slot", callback_data="command_reserve")],
+            [InlineKeyboardButton("Show current reservations", callback_data="command_show_reservations")],
+            [InlineKeyboardButton("Cancel all reservations", callback_data="command_cancel_all")],
+            [InlineKeyboardButton("Help", callback_data="command_help")]
+        ]
+        await context.bot.send_message(chat_id=chat_id, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
         print(f"Failed to send initial message to chat {chat_id}: {e}")
 
