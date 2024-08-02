@@ -177,6 +177,9 @@ async def button(update: Update, context: CallbackContext) -> None:
         periods = ["morning", "afternoon", "evening"]
         keyboard = [[InlineKeyboardButton(period.capitalize(), callback_data=f'period_{period}')] for period in periods]
         await query.edit_message_text(text=f"Selected date: {selected_date}\nSelect a period:", reply_markup=InlineKeyboardMarkup(keyboard))
+    elif query.data.startswith('page_'):
+        page = int(query.data.split('_')[1])
+        await reserve(update, context, page)
     elif query.data.startswith('period_'):
         selected_period = query.data.split('_')[1]
         context.user_data['selected_period'] = selected_period
@@ -206,10 +209,13 @@ async def button(update: Update, context: CallbackContext) -> None:
             await query.edit_message_text(text="Invalid slot selection. Please try again.")
             await show_main_menu(update, context)
 
-async def reserve(update: Update, context: CallbackContext) -> None:
+async def reserve(update: Update, context: CallbackContext, page=0) -> None:
     date_options = get_date_options()
-    keyboard = create_date_keyboard(date_options)
-    await update.callback_query.edit_message_text('Select a date:', reply_markup=keyboard)
+    keyboard = create_date_keyboard(date_options, page)
+    if update.callback_query:
+        await update.callback_query.edit_message_text('Select a date:', reply_markup=keyboard)
+    else:
+        await update.message.reply_text('Select a date:', reply_markup=keyboard)
 
 async def reserve_slot_command(update: Update, context: CallbackContext, selected_slot=None) -> None:
     query = update.callback_query
