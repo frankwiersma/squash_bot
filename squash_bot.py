@@ -21,6 +21,32 @@ HEADERS = {
     'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
 }
 
+def get_date_options(num_days=14):
+    today = datetime.now().date()
+    date_options = []
+    for i in range(num_days):
+        date = today + timedelta(days=i)
+        if date.weekday() < 5:  # Monday to Friday
+            date_options.append((date, 'Today' if i == 0 else 'Tomorrow' if i == 1 else date.strftime('%A, %d %b')))
+    return date_options
+
+def create_date_keyboard(date_options, page=0, items_per_page=8):
+    keyboard = []
+    start = page * items_per_page
+    end = start + items_per_page
+    for date, display_text in date_options[start:end]:
+        keyboard.append([InlineKeyboardButton(display_text, callback_data=f"date_{date.strftime('%Y-%m-%d')}")])
+    
+    nav_row = []
+    if page > 0:
+        nav_row.append(InlineKeyboardButton("◀️ Previous", callback_data=f"page_{page-1}"))
+    if end < len(date_options):
+        nav_row.append(InlineKeyboardButton("Next ▶️", callback_data=f"page_{page+1}"))
+    if nav_row:
+        keyboard.append(nav_row)
+    
+    return InlineKeyboardMarkup(keyboard)
+
 async def login():
     session = requests.Session()
     response = session.post(f"{BASE_URL}/auth/login", headers={
@@ -90,9 +116,9 @@ async def start(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text('Welcome! Select a command:', reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def reserve(update: Update, context: CallbackContext) -> None:
-    days = [(1, 'Tomorrow'), (2, 'Day After Tomorrow'), (get_next_weekday_date(2), 'Coming Wednesday'), (get_next_weekday_date(2, next_week=True), 'Next Week Wednesday')]
-    keyboard = [[InlineKeyboardButton(text, callback_data=f"date_{(datetime.now() + timedelta(days=days_ahead)).strftime('%Y-%m-%d')}")] for days_ahead, text in days]
-    await update.message.reply_text('Select a date:', reply_markup=InlineKeyboardMarkup(keyboard))
+    date_options = get_date_options()
+    keyboard = create_date_keyboard(date_options)
+    await update.message.reply_text('Select a date:', reply_markup=keyboard)
 
 def get_next_weekday_date(weekday, next_week=False):
     days_ahead = weekday - datetime.now().weekday()
@@ -111,6 +137,12 @@ async def button(update: Update, context: CallbackContext) -> None:
         periods = ["morning", "afternoon", "evening"]
         keyboard = [[InlineKeyboardButton(period.capitalize(), callback_data=f'period_{period}')] for period in periods]
         await query.edit_message_text(text=f"Selected date: {selected_date}\nSelect a period:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif query.data.startswith('page_'):
+        page = int(query.data.split('_')[1])
+        date_options = get_date_options()
+        keyboard = create_date_keyboard(date_options, page)
+        await query.edit_message_text(text='Select a date:', reply_markup=keyboard)
 
     elif query.data.startswith('period_'):
         selected_period = query.data.split('_')[1]
