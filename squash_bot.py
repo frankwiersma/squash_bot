@@ -6,6 +6,7 @@ from telegram.error import BadRequest, TimedOut
 import requests
 from bs4 import BeautifulSoup
 import os
+import json
 
 
 from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL, CHAT_ID
@@ -161,13 +162,9 @@ async def reserve_slot_command(update: Update, context: CallbackContext, selecte
         if selected_slot:
             date_diff = (datetime.strptime(selected_date, '%Y-%m-%d').date() - datetime.now().date()).days
             if date_diff > 7:
-                # Schedule the reservation
-                context.job_queue.run_once(
-                    reserve_on_date,
-                    when=datetime.now() + timedelta(days=date_diff - 7),
-                    data={'session': session, 'selected_slot': selected_slot, 'selected_date': selected_date, 'query': query}
-                )
-                await query.edit_message_text(f"Reservation scheduled for {selected_date}.")
+                # Store the future reservation details
+                store_future_reservation(selected_date, selected_slot)
+                await query.edit_message_text(f"Reservation for {selected_date} has been noted and will be booked when within the 7-day window.")
             else:
                 # Execute reservation now
                 result, start_time, end_time = await reserve_slot(session, selected_slot, selected_date)
@@ -179,7 +176,49 @@ async def reserve_slot_command(update: Update, context: CallbackContext, selecte
     else:
         await query.edit_message_text(text="Login failed. Please try again later.")
     await show_main_menu(update, context)
-    
+
+def store_future_reservation(date, slot):
+    # Store future reservation details locally
+    try:
+        with open('future_reservations.json', 'r') as file:
+            reservations = json.load(file)
+    except FileNotFoundError:
+        reservations = []
+
+    reservations.append({'date': date, 'slot': slot})
+    with open('future_reservations.json', 'w') as file:
+        json.dump(reservations, file)
+
+async def check_and_book_reservations():
+    # Load future reservations and attempt to book them
+    try:
+        with open('future_reservations.json', 'r') as file:
+            reservations = json.load(file)
+    except FileNotFoundError:
+        reservations = []
+
+    session = await login()
+    if not session:
+        return
+
+    updated_reservations = []
+    for reservation in reservations:
+        date_diff = (datetime.strptime(reservation['date'], '%Y-%m-%d').date() - datetime.now().date()).days
+        if date_diff <= 7:
+            result, start_time, end_time = await reserve_slot(session, reservation['slot'], reservation['date'])
+            bot.send_message(chat_id=CHAT_ID, text=result)  # Notify the result of booking attempt
+        else:
+            updated_reservations.append(reservation)  # Keep the reservation for future attempts
+
+    # Update the stored reservations
+    with open('future_reservations.json', 'w') as file:
+        json.dump(updated_reservations, file)
+
+
+def scheduler():
+    # Scheduler to check reservations daily
+    application.job_queue.run_repeating(check_and_book_reservations, interval=86400, first=1)  # Check every 24 hours
+
 async def send_ics_file(query: CallbackQuery, date: str, start_time: str, end_time: str):
     start_time_ics = datetime.strptime(f"{date} {start_time}", '%Y-%m-%d %H:%M')
     end_time_ics = datetime.strptime(f"{date} {end_time}", '%Y-%m-%d %H:%M')
@@ -398,9 +437,10 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
     application.job_queue.run_once(send_initial_message, when=1, data=CHAT_ID)
-    
     application.add_error_handler(error_handler)
-    
+
+    scheduler()  # Initialize the scheduler for future bookings
+
     application.run_polling()
 
 if __name__ == "__main__":
