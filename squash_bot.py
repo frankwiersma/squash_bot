@@ -1,4 +1,5 @@
 import requests
+import logging
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
@@ -6,6 +7,10 @@ from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQ
 import os
 
 from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL, CHAT_ID
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).job_queue(JobQueue()).build()
@@ -47,6 +52,7 @@ def create_date_keyboard(date_options, page=0, items_per_page=8):
 
 async def login():
     session = requests.Session()
+    logger.info("Attempting to login.")
     response = session.post(f"{BASE_URL}/auth/login", headers={
         'Content-Type': 'application/x-www-form-urlencoded',
         'Origin': BASE_URL,
@@ -58,18 +64,27 @@ async def login():
         'password': PASSWORD
     })
 
-    return session if response.status_code == 200 else None
+    if response.status_code == 200:
+        logger.info("Login successful.")
+        return session
+    else:
+        logger.error(f"Login failed with status code: {response.status_code}")
+        return None
 
 async def get_slots(session, date=None):
     date = date or datetime.now().strftime('%Y-%m-%d')
+    logger.info(f"Fetching slots for date: {date}")
     response = session.get(f"{BASE_URL}/reservations/{date}/sport/785", headers=HEADERS)
 
     if response.status_code == 200:
+        logger.info("Slots fetched successfully.")
         soup = BeautifulSoup(response.content, 'html.parser')
         slots = [(slot.get("slot"), slot.find_parent("tr").get("data-time"), slot.find_parent("tr").get("utc"))
                  for slot in soup.find_all("td", {"type": "free"}) if slot.find_parent("tr").get("utc")]
         current_utc_time = datetime.now(timezone.utc).timestamp()
         return [(slot_id, slot_time, slot_utc) for slot_id, slot_time, slot_utc in slots if float(slot_utc) > current_utc_time]
+    else:
+        logger.error(f"Failed to fetch slots with status code: {response.status_code}")
     return []
 
 async def display_slots(slots, period, date):
@@ -92,9 +107,11 @@ async def display_slots(slots, period, date):
 
 async def reserve_slot(session, selected_slot, date):
     reservation_url = f"{BASE_URL}/reservations/make/{selected_slot[0]}/{selected_slot[2]}"
+    logger.info(f"Attempting to reserve slot: {selected_slot} for date: {date}")
     response = session.get(reservation_url, headers=HEADERS)
 
     if response.status_code == 200:
+        logger.info("Reservation slot fetched successfully.")
         soup = BeautifulSoup(response.content, 'html.parser')
         confirm_data = {
             '_token': soup.find("input", {"name": "_token"}).get("value"),
@@ -111,9 +128,12 @@ async def reserve_slot(session, selected_slot, date):
         confirm_response = session.post(f"{BASE_URL}/reservations/confirm", headers=HEADERS, data=confirm_data)
         if confirm_response.status_code == 200:
             if 'success' in confirm_response.json().get('message', ''):
+                logger.info("Reservation successful.")
                 return "Reservation successful!", confirm_data['start_time'], confirm_data['end_time']
             else:
+                logger.error("Reservation failed: Unexpected response format.")
                 return "Reservation failed: Unexpected response format.", None, None
+    logger.error(f"Reservation failed! Status code: {response.status_code}")
     return f"Reservation failed! Status code: {response.status_code}", None, None
 
 async def start(update: Update, context: CallbackContext) -> None:
@@ -226,18 +246,31 @@ END:VCALENDAR"""
     os.remove(ics_file_path)
 
 async def get_future_reservations(session):
+    logger.info("Fetching future reservations.")
     response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
     if response.status_code == 200:
+        logger.info("Future reservations fetched successfully.")
         return [a['href'] for a in BeautifulSoup(response.content, 'html.parser').select('a.ajaxlink') if '/reservations/' in a['href']]
+    else:
+        logger.error(f"Failed to fetch future reservations with status code: {response.status_code}")
     return []
 
 async def cancel_reservation(session, reservation_id):
     cancel_url = f"{BASE_URL}{reservation_id}/cancel"
+    logger.info(f"Attempting to cancel reservation: {reservation_id}")
     response = session.get(cancel_url, headers=HEADERS)
     if response.status_code == 200:
+        logger.info("Cancellation page fetched successfully.")
         soup = BeautifulSoup(response.content, 'html.parser')
         confirm_response = session.post(cancel_url, headers=HEADERS, data={'_token': soup.find("input", {"name": "_token"}).get("value"), 'confirmed': '1'})
-        return "Reservation cancelled successfully." if confirm_response.status_code == 200 else f"Failed to cancel reservation! Status code: {confirm_response.status_code}"
+        if confirm_response.status_code == 200:
+            logger.info("Reservation cancelled successfully.")
+            return "Reservation cancelled successfully."
+        else:
+            logger.error(f"Failed to cancel reservation! Status code: {confirm_response.status_code}")
+            return f"Failed to cancel reservation! Status code: {confirm_response.status_code}"
+    else:
+        logger.error(f"Failed to initiate cancellation! Status code: {response.status_code}")
     return f"Failed to initiate cancellation! Status code: {response.status_code}"
 
 async def cancel_all_command(update: Update, context: CallbackContext) -> None:
@@ -262,8 +295,10 @@ async def help_command(update: Update, context: CallbackContext) -> None:
 async def show_reservations(update: Update, context: CallbackContext) -> None:
     session = await login()
     if session:
+        logger.info("Fetching current reservations.")
         response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
         if response.status_code == 200:
+            logger.info("Current reservations fetched successfully.")
             soup = BeautifulSoup(response.content, 'html.parser')
             reservations = soup.select('table.oneBorder tr')
             if reservations:
@@ -289,8 +324,10 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
             else:
                 await update.callback_query.edit_message_text("You have no upcoming reservations.")
         else:
+            logger.error(f"Failed to retrieve reservations with status code: {response.status_code}")
             await update.callback_query.edit_message_text("Failed to retrieve reservations. Please try again later.")
     else:
+        logger.error("Login failed.")
         await update.callback_query.edit_message_text("Login failed. Please try again later.")
     await show_main_menu(update, context)
 
@@ -306,7 +343,7 @@ async def send_initial_message(context: CallbackContext):
         ]
         await context.bot.send_message(chat_id=chat_id, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
-        print(f"Failed to send initial message to chat {chat_id}: {e}")
+        logger.error(f"Failed to send initial message to chat {chat_id}: {e}")
 
 def main():
     application.add_handler(CommandHandler("start", start))
@@ -319,3 +356,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
