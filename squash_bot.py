@@ -303,12 +303,12 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
 async def send_initial_message(context: CallbackContext):
     chat_id = context.job.data
     try:
-        message_text = 'Welcome! What would you like to do?'
+        message_text = '👋 Welcome! What would you like to do?'
         keyboard = [
-            [InlineKeyboardButton("Reserve a slot", callback_data="command_reserve")],
-            [InlineKeyboardButton("Show current reservations", callback_data="command_show_reservations")],
-            [InlineKeyboardButton("Cancel all reservations", callback_data="command_cancel_all")],
-            [InlineKeyboardButton("Help", callback_data="command_help")]
+        [InlineKeyboardButton("🎾 Reserve a slot", callback_data="command_reserve")],
+        [InlineKeyboardButton("📋 Show current reservations", callback_data="command_show_reservations")],
+        [InlineKeyboardButton("❌ Cancel all reservations", callback_data="command_cancel_all")],
+        [InlineKeyboardButton("ℹ️ Help", callback_data="command_help")]
         ]
         await context.bot.send_message(chat_id=chat_id, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
