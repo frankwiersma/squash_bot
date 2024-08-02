@@ -60,22 +60,23 @@ async def login():
     session = requests.Session()
     login_url = f"{BASE_URL}/auth/login"
     logger.info(f"Attempting to login. URL: POST {login_url}")
-    response = session.post(login_url, headers={
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Origin': BASE_URL,
-        'Referer': f'{BASE_URL}/?reason=LOGGED_IN&goto=%2Freservations',
-        **HEADERS
-    }, data={
-        'goto': '/reservations',
-        'username': USERNAME,
-        'password': PASSWORD
-    })
-
-    if response.status_code == 200:
+    try:
+        response = session.post(login_url, headers={
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Origin': BASE_URL,
+            'Referer': f'{BASE_URL}/?reason=LOGGED_IN&goto=%2Freservations',
+            **HEADERS
+        }, data={
+            'goto': '/reservations',
+            'username': USERNAME,
+            'password': PASSWORD
+        })
+        response.raise_for_status()  # This will raise an HTTPError for bad responses
+        logger.info(f"Login response status code: {response.status_code}")
         logger.info("Login successful.")
         return session
-    else:
-        logger.error(f"Login failed with status code: {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Login failed: {str(e)}")
         return None
 
 async def error_handler(update: object, context: CallbackContext) -> None:
@@ -193,16 +194,20 @@ async def button(update: Update, context: CallbackContext) -> None:
     if query.data.startswith('command_'):
         command = query.data.split('_')[1]
         logger.info(f"Command received: {command}")
-        if command == 'reserve':
-            await reserve(update, context)
-        elif command == 'show_reservations':
-            logger.info("Calling show_reservations function")
-            await show_reservations(update, context)
-        elif command == 'cancel_all':
-            logger.info("Calling cancel_all_command function")
-            await cancel_all_command(update, context)
-        elif command == 'help':
-            await help_command(update, context)
+        try:
+            if command == 'reserve':
+                await reserve(update, context)
+            elif command == 'show_reservations':
+                logger.info("Calling show_reservations function")
+                await show_reservations(update, context)
+            elif command == 'cancel_all':
+                logger.info("Calling cancel_all_command function")
+                await cancel_all_command(update, context)
+            elif command == 'help':
+                await help_command(update, context)
+        except Exception as e:
+            logger.error(f"Error executing command {command}: {str(e)}", exc_info=True)
+            await query.edit_message_text(f"An error occurred while executing the {command} command. Please try again later.")
     elif query.data.startswith('date_'):
         context.user_data['selected_date'] = selected_date = query.data.split('_')[1]
         logger.info(f"Date selected: {selected_date}")
@@ -355,11 +360,11 @@ async def cancel_reservation(session, reservation_id):
     return f"Failed to initiate cancellation! Status code: {response.status_code}"
 
 async def cancel_all_command(update: Update, context: CallbackContext) -> None:
+    logger.info("Entered cancel_all_command function")
     query = update.callback_query
-    await query.answer()
 
-    logger.info("Starting cancel_all_command")
     try:
+        logger.info("Attempting to login for cancel_all_command")
         session = await login()
         if session:
             logger.info("Login successful, proceeding to cancel reservations")
@@ -373,6 +378,7 @@ async def cancel_all_command(update: Update, context: CallbackContext) -> None:
                     logger.info(f"Cancellation result for {reservation['id']}: {result}")
                     results.append(f"Reservation on {reservation['date']} at {reservation['start_time']}: {result}")
                 result_text = "\n".join(results)
+                logger.info("Sending cancellation results to user")
                 await query.edit_message_text(f"Cancellation results:\n\n{result_text}")
             else:
                 logger.info("No upcoming reservations found")
@@ -399,11 +405,11 @@ async def help_command(update: Update, context: CallbackContext) -> None:
     await show_main_menu(update, context)
 
 async def show_reservations(update: Update, context: CallbackContext) -> None:
+    logger.info("Entered show_reservations function")
     query = update.callback_query
-    await query.answer()
 
-    logger.info("Starting show_reservations")
     try:
+        logger.info("Attempting to login for show_reservations")
         session = await login()
         if session:
             logger.info("Login successful, fetching current reservations")
@@ -420,6 +426,7 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
                         f"Made On: {reservation['made_on']}\n"
                         f"Cost: {reservation['cost']}\n\n"
                     )
+                logger.info("Sending reservation information to user")
                 await query.edit_message_text(reservation_text)
             else:
                 logger.info("No upcoming reservations found")
