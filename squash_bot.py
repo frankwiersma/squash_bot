@@ -82,8 +82,15 @@ async def display_slots(slots, period, date):
     }.get(period, [])
 
     unique_slots = {slot[1]: slot for slot in period_slots}
-    slots_text = f"Available Reservation Slots for {date} ({period}):\n" + "\n".join([f"{idx + 1}. Slot Time: {time}" for idx, (time, _) in enumerate(unique_slots.items())])
-    return (slots_text, list(unique_slots.values())) if unique_slots else (f"No available {period} slots for {date}.", [])
+    date_obj = datetime.strptime(date, '%Y-%m-%d')
+    formatted_date = date_obj.strftime('%A %d %b')  # e.g., "Monday 05 Aug"
+    slots_text = f"Available Reservation Slots for {formatted_date} ({period.capitalize()}):"
+    
+    keyboard = []
+    for idx, (time, slot) in enumerate(unique_slots.items()):
+        keyboard.append([InlineKeyboardButton(time, callback_data=f"slot_{idx}")])
+    
+    return (slots_text, list(unique_slots.values()), InlineKeyboardMarkup(keyboard)) if unique_slots else (f"No available {period} slots for {formatted_date}.", [], None)
 
 async def reserve_slot(session, selected_slot, date):
     reservation_url = f"{BASE_URL}/reservations/make/{selected_slot[0]}/{selected_slot[2]}"
@@ -138,12 +145,6 @@ async def button(update: Update, context: CallbackContext) -> None:
         keyboard = [[InlineKeyboardButton(period.capitalize(), callback_data=f'period_{period}')] for period in periods]
         await query.edit_message_text(text=f"Selected date: {selected_date}\nSelect a period:", reply_markup=InlineKeyboardMarkup(keyboard))
 
-    elif query.data.startswith('page_'):
-        page = int(query.data.split('_')[1])
-        date_options = get_date_options()
-        keyboard = create_date_keyboard(date_options, page)
-        await query.edit_message_text(text='Select a date:', reply_markup=keyboard)
-
     elif query.data.startswith('period_'):
         selected_period = query.data.split('_')[1]
         context.user_data['selected_period'] = selected_period
@@ -151,13 +152,23 @@ async def button(update: Update, context: CallbackContext) -> None:
 
         if session:
             slots = await get_slots(session, context.user_data['selected_date'])
-            slots_text, filtered_slots = await display_slots(slots, selected_period, context.user_data['selected_date'])
+            slots_text, filtered_slots, keyboard = await display_slots(slots, selected_period, context.user_data['selected_date'])
             context.user_data['filtered_slots'] = filtered_slots
-            await query.edit_message_text(text=slots_text)
-            if filtered_slots:
-                await query.message.reply_text("Use /reserve_slot <slot_number> to reserve a slot.")
+            if keyboard:
+                await query.edit_message_text(text=slots_text, reply_markup=keyboard)
+            else:
+                await query.edit_message_text(text=slots_text)
         else:
             await query.edit_message_text(text="Login failed.")
+
+    elif query.data.startswith('slot_'):
+        slot_index = int(query.data.split('_')[1])
+        filtered_slots = context.user_data.get('filtered_slots')
+        if filtered_slots and 0 <= slot_index < len(filtered_slots):
+            selected_slot = filtered_slots[slot_index]
+            await reserve_slot_command(update, context, selected_slot)
+        else:
+            await query.edit_message_text(text="Invalid slot selection. Please try again.")
 
     else:
         command_map = {
@@ -168,23 +179,18 @@ async def button(update: Update, context: CallbackContext) -> None:
         }
         await command_map.get(query.data, lambda u, c: None)(update, context)
 
-async def reserve_slot_command(update: Update, context: CallbackContext) -> None:
+async def reserve_slot_command(update: Update, context: CallbackContext, selected_slot=None) -> None:
     session = await login()
-    filtered_slots = context.user_data.get('filtered_slots')
-    if session and filtered_slots:
-        try:
-            slot_index = int(update.message.text.split()[1]) - 1
-            if 0 <= slot_index < len(filtered_slots):
-                result, start_time, end_time = await reserve_slot(session, filtered_slots[slot_index], context.user_data['selected_date'])
-                await update.message.reply_text(result)
-                if start_time and end_time:
-                    await send_ics_file(update, context.user_data['selected_date'], start_time, end_time)
-            else:
-                await update.message.reply_text('Invalid slot number.')
-        except (IndexError, ValueError):
-            await update.message.reply_text('Invalid input. Please enter a valid slot number.')
+    if session:
+        if selected_slot:
+            result, start_time, end_time = await reserve_slot(session, selected_slot, context.user_data['selected_date'])
+            await update.callback_query.edit_message_text(text=result)
+            if start_time and end_time:
+                await send_ics_file(update, context.user_data['selected_date'], start_time, end_time)
+        else:
+            await update.message.reply_text('Please select a slot using the buttons provided after choosing a date and period.')
     else:
-        await update.message.reply_text('You need to log in and check slots first. Use /reserve.')
+        await update.callback_query.edit_message_text(text="Login failed. Please try again later.")
 
 async def send_ics_file(update: Update, date: str, start_time: str, end_time: str):
     start_time_ics = (datetime.strptime(start_time, '%H:%M') - timedelta(hours=2)).strftime('%H:%M')
