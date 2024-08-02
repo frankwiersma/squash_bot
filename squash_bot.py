@@ -265,14 +265,26 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
         response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
         if response.status_code == 200:
             soup = BeautifulSoup(response.content, 'html.parser')
-            reservations = soup.select('tr.reservation')
+            reservations = soup.select('table.oneBorder tr')
             if reservations:
                 reservation_text = "Your current reservations:\n\n"
-                for reservation in reservations:
-                    date = reservation.select_one('td:nth-child(1)').text.strip()
-                    time = reservation.select_one('td:nth-child(2)').text.strip()
-                    court = reservation.select_one('td:nth-child(3)').text.strip()
-                    reservation_text += f"Date: {date}\nTime: {time}\nCourt: {court}\n\n"
+                for reservation in reservations[2:]:
+                    columns = reservation.find_all('td')
+                    if len(columns) > 0:
+                        date = columns[0].text.strip()
+                        day_of_week = columns[1].text.strip()
+                        start_time = columns[2].text.strip()
+                        court = columns[3].text.strip()
+                        made_on = columns[4].text.strip()
+                        cost = columns[5].text.strip()
+                        reservation_text += (
+                            f"Date: {date}\n"
+                            f"Weekday: {day_of_week}\n"
+                            f"Start Time: {start_time}\n"
+                            f"Court: {court}\n"
+                            f"Made On: {made_on}\n"
+                            f"Cost: {cost}\n\n"
+                        )
                 await update.callback_query.edit_message_text(reservation_text)
             else:
                 await update.callback_query.edit_message_text("You have no upcoming reservations.")
