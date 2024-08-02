@@ -1,11 +1,12 @@
 import asyncio
-import requests
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler, JobQueue
 from telegram.error import BadRequest, TimedOut
+import requests
+from bs4 import BeautifulSoup
 import os
+
 
 from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL, CHAT_ID
 
@@ -61,12 +62,12 @@ async def start(update: Update, context: CallbackContext) -> None:
 
 async def show_main_menu(update: Update, context: CallbackContext):
     keyboard = [
-        [InlineKeyboardButton("Reserve a slot", callback_data="command_reserve")],
-        [InlineKeyboardButton("Show current reservations", callback_data="command_show_reservations")],
-        [InlineKeyboardButton("Cancel all reservations", callback_data="command_cancel_all")],
-        [InlineKeyboardButton("Help", callback_data="command_help")]
+        [InlineKeyboardButton("🎾 Reserve a slot", callback_data="command_reserve")],
+        [InlineKeyboardButton("📋 Show current reservations", callback_data="command_show_reservations")],
+        [InlineKeyboardButton("❌ Cancel all reservations", callback_data="command_cancel_all")],
+        [InlineKeyboardButton("ℹ️ Help", callback_data="command_help")]
     ]
-    message_text = 'Welcome! What would you like to do?'
+    message_text = '👋 Welcome! What would you like to do?'
     
     if update.message:
         await update.message.reply_text(text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -139,9 +140,9 @@ async def reserve(update: Update, context: CallbackContext, page=0) -> None:
     date_options = get_date_options()
     keyboard = create_date_keyboard(date_options, page)
     if update.callback_query:
-        await update.callback_query.edit_message_text('Select a date:', reply_markup=keyboard)
+        await update.callback_query.edit_message_text('📅 Select a date:', reply_markup=keyboard)
     else:
-        await update.message.reply_text('Select a date:', reply_markup=keyboard)
+        await update.message.reply_text('📅 Select a date:', reply_markup=keyboard)
 
 async def reserve_slot_command(update: Update, context: CallbackContext, selected_slot=None) -> None:
     query = update.callback_query
@@ -279,23 +280,21 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
         if session:
             reservations = await get_future_reservations(session)
             if reservations:
-                reservation_text = "Your current reservations:\n\n"
+                reservation_text = "🏸 Your current reservations:\n\n"
+                reservation_text += "| Date 📅 | Weekday 📆 | Time ⏰ | Court 🏟️ | Made On 📝 | Cost 💰 |\n"
+                reservation_text += "|---------|-----------|------|-------|----------|------|\n"
                 for reservation in reservations:
                     reservation_text += (
-                        f"Date: {reservation['date']}\n"
-                        f"Weekday: {reservation['weekday']}\n"
-                        f"Start Time: {reservation['start_time']}\n"
-                        f"Court: {reservation['court']}\n"
-                        f"Made On: {reservation['made_on']}\n"
-                        f"Cost: {reservation['cost']}\n\n"
+                        f"| {reservation['date']} | {reservation['weekday']} | {reservation['start_time']} | "
+                        f"{reservation['court']} | {reservation['made_on']} | {reservation['cost']} |\n"
                     )
                 await send_message(reservation_text)
             else:
-                await send_message("You have no upcoming reservations.")
+                await send_message("📅 You have no upcoming reservations.")
         else:
-            await send_message("Login failed. Please try again later.")
+            await send_message("❌ Login failed. Please try again later.")
     except Exception as e:
-        await send_message("An error occurred while fetching reservations. Please try again later.")
+        await send_message("⚠️ An error occurred while fetching reservations. Please try again later.")
     
     await asyncio.sleep(10)
     await send_message("What would you like to do next?")
@@ -351,13 +350,13 @@ async def display_slots(slots, period, date):
     unique_slots = {slot[1]: slot for slot in period_slots}
     date_obj = datetime.strptime(date, '%Y-%m-%d')
     formatted_date = date_obj.strftime('%A %d %b')
-    slots_text = f"Available Reservation Slots for {formatted_date} ({period.capitalize()}):"
+    slots_text = f"🕒 Available Reservation Slots for {formatted_date} ({period.capitalize()}):"
     
     keyboard = []
     for idx, (time, slot) in enumerate(unique_slots.items()):
-        keyboard.append([InlineKeyboardButton(time, callback_data=f"slot_{idx}")])
+        keyboard.append([InlineKeyboardButton(f"⏰ {time}", callback_data=f"slot_{idx}")])
     
-    return (slots_text, list(unique_slots.values()), InlineKeyboardMarkup(keyboard)) if unique_slots else (f"No available {period} slots for {formatted_date}.", [], None)
+    return (slots_text, list(unique_slots.values()), InlineKeyboardMarkup(keyboard)) if unique_slots else (f"😔 No available {period} slots for {formatted_date}.", [], None)
 
 async def reserve_slot(session, selected_slot, date):
     reservation_url = f"{BASE_URL}/reservations/make/{selected_slot[0]}/{selected_slot[2]}"
