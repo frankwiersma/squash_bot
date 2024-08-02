@@ -264,7 +264,38 @@ async def get_future_reservations(session):
     if response.status_code == 200:
         logger.info("Future reservations fetched successfully.")
         soup = BeautifulSoup(response.content, 'html.parser')
-        return [a['href'] for a in soup.select('a.ajaxlink') if '/reservations/' in a['href']]
+        reservations = []
+        
+        # Find the table with class "oneBorder"
+        table = soup.find('table', class_='oneBorder')
+        if table:
+            # Find all rows in the table body (skip the header rows)
+            rows = table.find_all('tr', class_=['odd', 'even'])
+            for row in rows:
+                cols = row.find_all('td')
+                if len(cols) >= 6:  # Ensure we have enough columns
+                    reservation_link = cols[0].find('a', class_='ajaxlink')
+                    if reservation_link and 'href' in reservation_link.attrs:
+                        reservation_id = reservation_link['href']
+                        date = cols[0].text.strip()
+                        weekday = cols[1].text.strip()
+                        start_time = cols[2].text.strip()
+                        court = cols[3].text.strip()
+                        made_on = cols[4].text.strip()
+                        cost = cols[5].text.strip()
+                        
+                        reservations.append({
+                            'id': reservation_id,
+                            'date': date,
+                            'weekday': weekday,
+                            'start_time': start_time,
+                            'court': court,
+                            'made_on': made_on,
+                            'cost': cost
+                        })
+        
+        logger.info(f"Found {len(reservations)} future reservations.")
+        return reservations
     else:
         logger.error(f"Failed to fetch future reservations with status code: {response.status_code}")
     return []
@@ -290,7 +321,10 @@ async def cancel_all_command(update: Update, context: CallbackContext) -> None:
         logger.info("Canceling all future reservations.")
         reservations = await get_future_reservations(session)
         if reservations:
-            results = [await cancel_reservation(session, reservation_id) for reservation_id in reservations]
+            results = []
+            for reservation in reservations:
+                result = await cancel_reservation(session, reservation['id'])
+                results.append(f"Reservation on {reservation['date']} at {reservation['start_time']}: {result}")
             result_text = "\n".join(results)
             await query.edit_message_text(f"Cancellation results:\n\n{result_text}")
         else:
