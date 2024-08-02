@@ -5,10 +5,8 @@ from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, Ca
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
 import os
 
-# Import credentials from credentials.py
 from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL
 
-# Initialize bot and application
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -83,7 +81,7 @@ async def display_slots(slots, period, date):
 
     unique_slots = {slot[1]: slot for slot in period_slots}
     date_obj = datetime.strptime(date, '%Y-%m-%d')
-    formatted_date = date_obj.strftime('%A %d %b')  # e.g., "Monday 05 Aug"
+    formatted_date = date_obj.strftime('%A %d %b')
     slots_text = f"Available Reservation Slots for {formatted_date} ({period.capitalize()}):"
     
     keyboard = []
@@ -119,21 +117,21 @@ async def reserve_slot(session, selected_slot, date):
     return f"Reservation failed! Status code: {response.status_code}", None, None
 
 async def start(update: Update, context: CallbackContext) -> None:
-    keyboard = [[InlineKeyboardButton(command, callback_data=f"command_{command[1:]}")] for command in ["/reserve", "/reserve_slot", "/cancel_all", "/help"]]
-    await update.message.reply_text('Welcome! Select a command:', reply_markup=InlineKeyboardMarkup(keyboard))
+    await show_main_menu(update, context)
+
+async def show_main_menu(update: Update, context: CallbackContext) -> None:
+    keyboard = [
+        [InlineKeyboardButton("Reserve a slot", callback_data="command_reserve")],
+        [InlineKeyboardButton("Show current reservations", callback_data="command_show_reservations")],
+        [InlineKeyboardButton("Cancel all reservations", callback_data="command_cancel_all")],
+        [InlineKeyboardButton("Help", callback_data="command_help")]
+    ]
+    await update.message.reply_text('Welcome! What would you like to do?', reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def reserve(update: Update, context: CallbackContext) -> None:
     date_options = get_date_options()
     keyboard = create_date_keyboard(date_options)
-    await update.message.reply_text('Select a date:', reply_markup=keyboard)
-
-def get_next_weekday_date(weekday, next_week=False):
-    days_ahead = weekday - datetime.now().weekday()
-    if days_ahead <= 0:
-        days_ahead += 7
-    if next_week:
-        days_ahead += 7
-    return days_ahead
+    await update.callback_query.edit_message_text('Select a date:', reply_markup=keyboard)
 
 async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -173,7 +171,7 @@ async def button(update: Update, context: CallbackContext) -> None:
     else:
         command_map = {
             'command_reserve': reserve,
-            'command_reserve_slot': lambda u, c: u.message.reply_text("Use /reserve_slot <slot_number> to reserve a slot after selecting a date and period."),
+            'command_show_reservations': show_reservations,
             'command_cancel_all': cancel_all_command,
             'command_help': help_command
         }
@@ -188,6 +186,7 @@ async def reserve_slot_command(update: Update, context: CallbackContext, selecte
             await query.edit_message_text(text=result)
             if start_time and end_time:
                 await send_ics_file(query, context.user_data['selected_date'], start_time, end_time)
+            await show_main_menu(update, context)
         else:
             await query.edit_message_text(text='Please select a slot using the buttons provided after choosing a date and period.')
     else:
@@ -217,7 +216,7 @@ END:VCALENDAR"""
     with open(ics_file_path, 'rb') as ics_file:
         await query.message.reply_document(document=ics_file, filename="squash_reservation.ics")
 
-    os.remove(ics_file_path)  # Clean up the temporary file
+    os.remove(ics_file_path)
 
 async def get_future_reservations(session):
     response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
@@ -238,26 +237,48 @@ async def cancel_all_command(update: Update, context: CallbackContext) -> None:
     session = await login()
     if session:
         results = [await cancel_reservation(session, reservation_id) for reservation_id in await get_future_reservations(session)]
-        await update.message.reply_text("\n".join(results) if results else "No upcoming reservations found.")
+        await update.callback_query.edit_message_text("\n".join(results) if results else "No upcoming reservations found.")
     else:
-        await update.message.reply_text("Login failed.")
+        await update.callback_query.edit_message_text("Login failed.")
+    await show_main_menu(update, context)
 
 async def help_command(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text(
-        "Here are the available commands:\n"
-        "/reserve - Start the reservation process\n"
-        "/reserve_slot <slot_number> - Reserve a selected slot\n"
-        "/cancel_all - Cancel all upcoming reservations\n"
-        "/help - Show this help message\n"
+    help_text = (
+        "Here are the available options:\n\n"
+        "• Reserve a slot: Start the reservation process\n"
+        "• Show current reservations: Display your upcoming reservations\n"
+        "• Cancel all reservations: Cancel all your upcoming reservations\n"
+        "• Help: Show this help message\n"
     )
+    await update.callback_query.edit_message_text(help_text)
+    await show_main_menu(update, context)
+
+async def show_reservations(update: Update, context: CallbackContext) -> None:
+    session = await login()
+    if session:
+        response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            reservations = soup.select('tr.reservation')
+            if reservations:
+                reservation_text = "Your current reservations:\n\n"
+                for reservation in reservations:
+                    date = reservation.select_one('td:nth-child(1)').text.strip()
+                    time = reservation.select_one('td:nth-child(2)').text.strip()
+                    court = reservation.select_one('td:nth-child(3)').text.strip()
+                    reservation_text += f"Date: {date}\nTime: {time}\nCourt: {court}\n\n"
+                await update.callback_query.edit_message_text(reservation_text)
+            else:
+                await update.callback_query.edit_message_text("You have no upcoming reservations.")
+        else:
+            await update.callback_query.edit_message_text("Failed to retrieve reservations. Please try again later.")
+    else:
+        await update.callback_query.edit_message_text("Login failed. Please try again later.")
+    await show_main_menu(update, context)
 
 def main():
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("reserve", reserve))
     application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(CommandHandler("reserve_slot", reserve_slot_command))
-    application.add_handler(CommandHandler("cancel_all", cancel_all_command))
-    application.add_handler(CommandHandler("help", help_command))
     application.run_polling()
 
 if __name__ == "__main__":
