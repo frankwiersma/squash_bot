@@ -196,8 +196,10 @@ async def button(update: Update, context: CallbackContext) -> None:
         if command == 'reserve':
             await reserve(update, context)
         elif command == 'show_reservations':
+            logger.info("Calling show_reservations function")
             await show_reservations(update, context)
         elif command == 'cancel_all':
+            logger.info("Calling cancel_all_command function")
             await cancel_all_command(update, context)
         elif command == 'help':
             await help_command(update, context)
@@ -291,9 +293,10 @@ END:VCALENDAR"""
 async def get_future_reservations(session):
     future_reservations_url = f"{BASE_URL}/user/future"
     logger.info(f"Fetching future reservations. URL: GET {future_reservations_url}")
-    response = session.get(future_reservations_url, headers=HEADERS)
-    if response.status_code == 200:
-        logger.info("Future reservations page fetched successfully")
+    try:
+        response = session.get(future_reservations_url, headers=HEADERS)
+        response.raise_for_status()  # This will raise an HTTPError for bad responses
+        logger.info(f"Future reservations page fetched successfully. Status code: {response.status_code}")
         soup = BeautifulSoup(response.content, 'html.parser')
         reservations = []
         
@@ -319,9 +322,9 @@ async def get_future_reservations(session):
         
         logger.info(f"Total of {len(reservations)} future reservations found")
         return reservations
-    else:
-        logger.error(f"Failed to fetch future reservations. Status code: {response.status_code}")
-    return []
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error fetching future reservations: {str(e)}")
+        return []
 
 async def cancel_reservation(session, reservation_id):
     cancel_url = f"{BASE_URL}{reservation_id}/cancel"
@@ -356,26 +359,30 @@ async def cancel_all_command(update: Update, context: CallbackContext) -> None:
     await query.answer()
 
     logger.info("Starting cancel_all_command")
-    session = await login()
-    if session:
-        logger.info("Login successful, proceeding to cancel reservations")
-        reservations = await get_future_reservations(session)
-        if reservations:
+    try:
+        session = await login()
+        if session:
+            logger.info("Login successful, proceeding to cancel reservations")
+            reservations = await get_future_reservations(session)
             logger.info(f"Found {len(reservations)} reservations to cancel")
-            results = []
-            for reservation in reservations:
-                logger.info(f"Attempting to cancel reservation: {reservation['id']}")
-                result = await cancel_reservation(session, reservation['id'])
-                logger.info(f"Cancellation result for {reservation['id']}: {result}")
-                results.append(f"Reservation on {reservation['date']} at {reservation['start_time']}: {result}")
-            result_text = "\n".join(results)
-            await query.edit_message_text(f"Cancellation results:\n\n{result_text}")
+            if reservations:
+                results = []
+                for reservation in reservations:
+                    logger.info(f"Attempting to cancel reservation: {reservation['id']}")
+                    result = await cancel_reservation(session, reservation['id'])
+                    logger.info(f"Cancellation result for {reservation['id']}: {result}")
+                    results.append(f"Reservation on {reservation['date']} at {reservation['start_time']}: {result}")
+                result_text = "\n".join(results)
+                await query.edit_message_text(f"Cancellation results:\n\n{result_text}")
+            else:
+                logger.info("No upcoming reservations found")
+                await query.edit_message_text("No upcoming reservations found.")
         else:
-            logger.info("No upcoming reservations found")
-            await query.edit_message_text("No upcoming reservations found.")
-    else:
-        logger.error("Login failed in cancel_all_command")
-        await query.edit_message_text("Login failed. Unable to cancel reservations.")
+            logger.error("Login failed in cancel_all_command")
+            await query.edit_message_text("Login failed. Unable to cancel reservations.")
+    except Exception as e:
+        logger.error(f"Error in cancel_all_command: {str(e)}", exc_info=True)
+        await query.edit_message_text("An error occurred while canceling reservations. Please try again later.")
     
     logger.info("Finished cancel_all_command, showing main menu")
     await asyncio.sleep(3)
@@ -395,28 +402,36 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
 
-    session = await login()
-    if session:
-        logger.info("Fetching current reservations.")
-        reservations = await get_future_reservations(session)
-        if reservations:
-            reservation_text = "Your current reservations:\n\n"
-            for reservation in reservations:
-                reservation_text += (
-                    f"Date: {reservation['date']}\n"
-                    f"Weekday: {reservation['weekday']}\n"
-                    f"Start Time: {reservation['start_time']}\n"
-                    f"Court: {reservation['court']}\n"
-                    f"Made On: {reservation['made_on']}\n"
-                    f"Cost: {reservation['cost']}\n\n"
-                )
-            await query.edit_message_text(reservation_text)
+    logger.info("Starting show_reservations")
+    try:
+        session = await login()
+        if session:
+            logger.info("Login successful, fetching current reservations")
+            reservations = await get_future_reservations(session)
+            logger.info(f"Found {len(reservations)} reservations")
+            if reservations:
+                reservation_text = "Your current reservations:\n\n"
+                for reservation in reservations:
+                    reservation_text += (
+                        f"Date: {reservation['date']}\n"
+                        f"Weekday: {reservation['weekday']}\n"
+                        f"Start Time: {reservation['start_time']}\n"
+                        f"Court: {reservation['court']}\n"
+                        f"Made On: {reservation['made_on']}\n"
+                        f"Cost: {reservation['cost']}\n\n"
+                    )
+                await query.edit_message_text(reservation_text)
+            else:
+                logger.info("No upcoming reservations found")
+                await query.edit_message_text("You have no upcoming reservations.")
         else:
-            await query.edit_message_text("You have no upcoming reservations.")
-    else:
-        logger.error("Login failed.")
-        await query.edit_message_text("Login failed. Please try again later.")
+            logger.error("Login failed in show_reservations")
+            await query.edit_message_text("Login failed. Please try again later.")
+    except Exception as e:
+        logger.error(f"Error in show_reservations: {str(e)}", exc_info=True)
+        await query.edit_message_text("An error occurred while fetching reservations. Please try again later.")
     
+    logger.info("Finished show_reservations, showing main menu")
     await asyncio.sleep(3)
     await show_main_menu(update, context)
 
