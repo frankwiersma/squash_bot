@@ -137,12 +137,21 @@ async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
 
-    if query.data.startswith('date_'):
+    if query.data.startswith('command_'):
+        command = query.data.split('_')[1]
+        if command == 'reserve':
+            await reserve(update, context)
+        elif command == 'show_reservations':
+            await show_reservations(update, context)
+        elif command == 'cancel_all':
+            await cancel_all_command(update, context)
+        elif command == 'help':
+            await help_command(update, context)
+    elif query.data.startswith('date_'):
         context.user_data['selected_date'] = selected_date = query.data.split('_')[1]
         periods = ["morning", "afternoon", "evening"]
         keyboard = [[InlineKeyboardButton(period.capitalize(), callback_data=f'period_{period}')] for period in periods]
         await query.edit_message_text(text=f"Selected date: {selected_date}\nSelect a period:", reply_markup=InlineKeyboardMarkup(keyboard))
-
     elif query.data.startswith('period_'):
         selected_period = query.data.split('_')[1]
         context.user_data['selected_period'] = selected_period
@@ -156,9 +165,10 @@ async def button(update: Update, context: CallbackContext) -> None:
                 await query.edit_message_text(text=slots_text, reply_markup=keyboard)
             else:
                 await query.edit_message_text(text=slots_text)
+                await show_main_menu(update, context)
         else:
             await query.edit_message_text(text="Login failed.")
-
+            await show_main_menu(update, context)
     elif query.data.startswith('slot_'):
         slot_index = int(query.data.split('_')[1])
         filtered_slots = context.user_data.get('filtered_slots')
@@ -167,15 +177,7 @@ async def button(update: Update, context: CallbackContext) -> None:
             await reserve_slot_command(update, context, selected_slot)
         else:
             await query.edit_message_text(text="Invalid slot selection. Please try again.")
-
-    else:
-        command_map = {
-            'command_reserve': reserve,
-            'command_show_reservations': show_reservations,
-            'command_cancel_all': cancel_all_command,
-            'command_help': help_command
-        }
-        await command_map.get(query.data, lambda u, c: None)(update, context)
+            await show_main_menu(update, context)
 
 async def reserve(update: Update, context: CallbackContext) -> None:
     date_options = get_date_options()
@@ -191,11 +193,11 @@ async def reserve_slot_command(update: Update, context: CallbackContext, selecte
             await query.edit_message_text(text=result)
             if start_time and end_time:
                 await send_ics_file(query, context.user_data['selected_date'], start_time, end_time)
-            await show_main_menu(update, context)
         else:
             await query.edit_message_text(text='Please select a slot using the buttons provided after choosing a date and period.')
     else:
         await query.edit_message_text(text="Login failed. Please try again later.")
+    await show_main_menu(update, context)
 
 async def send_ics_file(query: CallbackQuery, date: str, start_time: str, end_time: str):
     start_time_ics = datetime.strptime(f"{date} {start_time}", '%Y-%m-%d %H:%M')
@@ -253,8 +255,7 @@ async def help_command(update: Update, context: CallbackContext) -> None:
         "• Reserve a slot: Start the reservation process\n"
         "• Show current reservations: Display your upcoming reservations\n"
         "• Cancel all reservations: Cancel all your upcoming reservations\n"
-        "• Help: Show this help message\n"
-    )
+        "• Help: Show this help message\n")
     await update.callback_query.edit_message_text(help_text)
     await show_main_menu(update, context)
 
