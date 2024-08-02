@@ -329,15 +329,16 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
         if session:
             reservations = await get_future_reservations(session)
             if reservations:
-                reservation_text = "🏸 Your current reservations:\n\n"
-                reservation_text += "| Date 📅 | Weekday 📆 | Time ⏰ | Made On 📝 | \n"
-                reservation_text += "|---------|-----------|------|----------|\n"
+                reservation_text = "🏸 *Your Current Reservations:*\n\n"
                 for reservation in reservations:
                     reservation_text += (
-                        f"| {reservation['date']} | {reservation['weekday']} | {reservation['start_time']} | "
-                        f" {reservation['made_on']} |\n"
+                        f"📅 *Date:* {reservation['date']}\n"
+                        f"📆 *Weekday:* {reservation['weekday']}\n"
+                        f"⏰ *Time:* {reservation['start_time']}\n"
+                        f"📝 *Made On:* {reservation['made_on']}\n"
+                        f"----------------------------------------\n"
                     )
-                await send_message(reservation_text)
+                await send_message(reservation_text, parse_mode='Markdown')
             else:
                 await send_message("📅 You have no upcoming reservations.")
         else:
