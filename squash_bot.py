@@ -2,13 +2,15 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
-from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler, JobQueue
 import os
 
-from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL
+from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL, CHAT_ID
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
 application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+application.job_queue = JobQueue()
+application.job_queue.set_application(application)
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.6478.57 Safari/537.36',
@@ -119,7 +121,7 @@ async def reserve_slot(session, selected_slot, date):
 async def start(update: Update, context: CallbackContext) -> None:
     await show_main_menu(update, context)
 
-async def show_main_menu(update: Update, context: CallbackContext) -> None:
+async def show_main_menu(bot, chat_id):
     keyboard = [
         [InlineKeyboardButton("Reserve a slot", callback_data="command_reserve")],
         [InlineKeyboardButton("Show current reservations", callback_data="command_show_reservations")],
@@ -128,10 +130,7 @@ async def show_main_menu(update: Update, context: CallbackContext) -> None:
     ]
     message_text = 'Welcome! What would you like to do?'
     
-    if update.message:
-        await update.message.reply_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard))
-    elif update.callback_query:
-        await update.callback_query.edit_message_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard))
+    await bot.send_message(chat_id=chat_id, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -282,21 +281,20 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
         await update.callback_query.edit_message_text("Login failed. Please try again later.")
     await show_main_menu(update, context)
 
-async def send_initial_message(application: Application):
-    # Get all active chats
-    async for chat in application.bot.get_updates():
-        try:
-            # Send the main menu to each chat
-            await show_main_menu(chat, None)
-        except Exception as e:
-            print(f"Failed to send initial message to chat {chat.effective_chat.id}: {e}")
+async def send_initial_message(context: CallbackContext):
+    chat_id = context.job.data  # This will be your chat ID from credentials.py
+    try:
+        # Send the main menu to your chat
+        await show_main_menu(context.bot, chat_id)
+    except Exception as e:
+        print(f"Failed to send initial message to chat {chat_id}: {e}")
 
 def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
     
-    # Send initial message with buttons to all chats
-    application.job_queue.run_once(send_initial_message, when=1, data=application)
+    # Schedule the initial message
+    application.job_queue.run_once(send_initial_message, when=1, data=CHAT_ID)
     
     application.run_polling()
 
