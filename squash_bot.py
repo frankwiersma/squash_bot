@@ -265,24 +265,15 @@ async def get_future_reservations(session):
 
 async def cancel_reservation(session, reservation_id):
     cancel_url = f"{BASE_URL}{reservation_id}/cancel"
-    logger.info(f"Attempting to cancel reservation: {reservation_id}")
     response = session.get(cancel_url, headers=HEADERS)
     if response.status_code == 200:
-        logger.info("Cancellation page fetched successfully.")
         soup = BeautifulSoup(response.content, 'html.parser')
         confirm_response = session.post(cancel_url, headers=HEADERS, data={
             '_token': soup.find("input", {"name": "_token"}).get("value"),
             'confirmed': '1'
         })
-        if confirm_response.status_code == 200:
-            logger.info("Reservation cancelled successfully.")
-            return f"Reservation {reservation_id} cancelled successfully."
-        else:
-            logger.error(f"Failed to cancel reservation! Status code: {confirm_response.status_code}")
-            return f"Failed to cancel reservation {reservation_id}! Status code: {confirm_response.status_code}"
-    else:
-        logger.error(f"Failed to initiate cancellation! Status code: {response.status_code}")
-    return f"Failed to initiate cancellation for {reservation_id}! Status code: {response.status_code}"
+        return "Reservation cancelled successfully." if confirm_response.status_code == 200 else f"Failed to cancel reservation! Status code: {confirm_response.status_code}"
+    return f"Failed to initiate cancellation! Status code: {response.status_code}"
 
 async def cancel_all_command(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -316,6 +307,9 @@ async def help_command(update: Update, context: CallbackContext) -> None:
     await show_main_menu(update, context)
 
 async def show_reservations(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+
     session = await login()
     if session:
         logger.info("Fetching current reservations.")
@@ -343,15 +337,17 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
                             f"Made On: {made_on}\n"
                             f"Cost: {cost}\n\n"
                         )
-                await update.callback_query.edit_message_text(reservation_text)
+                await query.edit_message_text(reservation_text)
             else:
-                await update.callback_query.edit_message_text("You have no upcoming reservations.")
+                await query.edit_message_text("You have no upcoming reservations.")
         else:
             logger.error(f"Failed to retrieve reservations with status code: {response.status_code}")
-            await update.callback_query.edit_message_text("Failed to retrieve reservations. Please try again later.")
+            await query.edit_message_text("Failed to retrieve reservations. Please try again later.")
     else:
         logger.error("Login failed.")
-        await update.callback_query.edit_message_text("Login failed. Please try again later.")
+        await query.edit_message_text("Login failed. Please try again later.")
+    
+    await asyncio.sleep(3)
     await show_main_menu(update, context)
 
 async def send_initial_message(context: CallbackContext):
