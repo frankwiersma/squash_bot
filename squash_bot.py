@@ -282,9 +282,22 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
         await update.callback_query.edit_message_text("Login failed. Please try again later.")
     await show_main_menu(update, context)
 
+async def send_initial_message(application: Application):
+    # Get all active chats
+    async for chat in application.bot.get_updates():
+        try:
+            # Send the main menu to each chat
+            await show_main_menu(chat, None)
+        except Exception as e:
+            print(f"Failed to send initial message to chat {chat.effective_chat.id}: {e}")
+
 def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
+    
+    # Send initial message with buttons to all chats
+    application.job_queue.run_once(send_initial_message, when=1, data=application)
+    
     application.run_polling()
 
 if __name__ == "__main__":
