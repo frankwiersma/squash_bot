@@ -64,8 +64,7 @@ async def show_main_menu(update: Update, context: CallbackContext):
     keyboard = [
         [InlineKeyboardButton("🎾 Reserve a slot", callback_data="command_reserve")],
         [InlineKeyboardButton("📋 Show current reservations", callback_data="command_show_reservations")],
-        [InlineKeyboardButton("❌ Cancel all reservations", callback_data="command_cancel_all")],
-        [InlineKeyboardButton("ℹ️ Help", callback_data="command_help")]
+        [InlineKeyboardButton("❌ Cancel all reservations", callback_data="command_cancel_all")]
     ]
     message_text = '👋 Welcome! What would you like to do?'
     
@@ -92,8 +91,6 @@ async def button(update: Update, context: CallbackContext) -> None:
                 await show_reservations(update, context)
             elif command == 'cancel_all':
                 await cancel_all_command(update, context)
-            elif command == 'help':
-                await help_command(update, context)
             else:
                 await query.edit_message_text(f"Unknown command: {command}")
         elif query.data.startswith('date_'):
@@ -257,16 +254,6 @@ async def cancel_all_command(update: Update, context: CallbackContext) -> None:
     await asyncio.sleep(10)
     await query.message.reply_text("What would you like to do next?")
     await show_main_menu(update, context)
-
-async def help_command(update: Update, context: CallbackContext) -> None:
-    help_text = (
-        "Here are the available options:\n\n"
-        "• Reserve a slot: Start the reservation process\n"
-        "• Show current reservations: Display your upcoming reservations\n"
-        "• Cancel all reservations: Cancel all your upcoming reservations\n"
-        "• Help: Show this help message\n")
-    await update.callback_query.edit_message_text(help_text)
-    await show_main_menu(update, context)
         
 async def show_reservations(update: Update, context: CallbackContext) -> None:
     if update.callback_query:
@@ -307,8 +294,7 @@ async def send_initial_message(context: CallbackContext):
         keyboard = [
         [InlineKeyboardButton("🎾 Reserve a slot", callback_data="command_reserve")],
         [InlineKeyboardButton("📋 Show current reservations", callback_data="command_show_reservations")],
-        [InlineKeyboardButton("❌ Cancel all reservations", callback_data="command_cancel_all")],
-        [InlineKeyboardButton("ℹ️ Help", callback_data="command_help")]
+        [InlineKeyboardButton("❌ Cancel all reservations", callback_data="command_cancel_all")]
         ]
         await context.bot.send_message(chat_id=chat_id, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard))
     except Exception as e:
