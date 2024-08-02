@@ -126,12 +126,12 @@ async def show_main_menu(update: Update, context: CallbackContext) -> None:
         [InlineKeyboardButton("Cancel all reservations", callback_data="command_cancel_all")],
         [InlineKeyboardButton("Help", callback_data="command_help")]
     ]
-    await update.message.reply_text('Welcome! What would you like to do?', reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def reserve(update: Update, context: CallbackContext) -> None:
-    date_options = get_date_options()
-    keyboard = create_date_keyboard(date_options)
-    await update.callback_query.edit_message_text('Select a date:', reply_markup=keyboard)
+    message_text = 'Welcome! What would you like to do?'
+    
+    if update.message:
+        await update.message.reply_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard))
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(message_text, reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
@@ -176,6 +176,11 @@ async def button(update: Update, context: CallbackContext) -> None:
             'command_help': help_command
         }
         await command_map.get(query.data, lambda u, c: None)(update, context)
+
+async def reserve(update: Update, context: CallbackContext) -> None:
+    date_options = get_date_options()
+    keyboard = create_date_keyboard(date_options)
+    await update.callback_query.edit_message_text('Select a date:', reply_markup=keyboard)
 
 async def reserve_slot_command(update: Update, context: CallbackContext, selected_slot=None) -> None:
     query = update.callback_query
