@@ -58,8 +58,9 @@ def create_date_keyboard(date_options, page=0, items_per_page=8):
 
 async def login():
     session = requests.Session()
-    logger.info("Attempting to login.")
-    response = session.post(f"{BASE_URL}/auth/login", headers={
+    login_url = f"{BASE_URL}/auth/login"
+    logger.info(f"Attempting to login. URL: POST {login_url}")
+    response = session.post(login_url, headers={
         'Content-Type': 'application/x-www-form-urlencoded',
         'Origin': BASE_URL,
         'Referer': f'{BASE_URL}/?reason=LOGGED_IN&goto=%2Freservations',
@@ -92,8 +93,9 @@ async def error_handler(update: object, context: CallbackContext) -> None:
 
 async def get_slots(session, date=None):
     date = date or datetime.now().strftime('%Y-%m-%d')
-    logger.info(f"Fetching slots for date: {date}")
-    response = session.get(f"{BASE_URL}/reservations/{date}/sport/785", headers=HEADERS)
+    slots_url = f"{BASE_URL}/reservations/{date}/sport/785"
+    logger.info(f"Fetching slots for date: {date}. URL: GET {slots_url}")
+    response = session.get(slots_url, headers=HEADERS)
 
     if response.status_code == 200:
         logger.info("Slots fetched successfully.")
@@ -126,7 +128,7 @@ async def display_slots(slots, period, date):
 
 async def reserve_slot(session, selected_slot, date):
     reservation_url = f"{BASE_URL}/reservations/make/{selected_slot[0]}/{selected_slot[2]}"
-    logger.info(f"Attempting to reserve slot: {selected_slot} for date: {date}")
+    logger.info(f"Attempting to reserve slot: {selected_slot} for date: {date}. URL: GET {reservation_url}")
     response = session.get(reservation_url, headers=HEADERS)
 
     if response.status_code == 200:
@@ -144,7 +146,9 @@ async def reserve_slot(session, selected_slot, date):
             'players[2]': PLAYERS2
         }
 
-        confirm_response = session.post(f"{BASE_URL}/reservations/confirm", headers=HEADERS, data=confirm_data)
+        confirm_url = f"{BASE_URL}/reservations/confirm"
+        logger.info(f"Confirming reservation. URL: POST {confirm_url}")
+        confirm_response = session.post(confirm_url, headers=HEADERS, data=confirm_data)
         if confirm_response.status_code == 200:
             if 'success' in confirm_response.json().get('message', ''):
                 logger.info("Reservation successful.")
@@ -285,8 +289,9 @@ END:VCALENDAR"""
     os.remove(ics_file_path)
 
 async def get_future_reservations(session):
-    logger.info("Fetching future reservations")
-    response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
+    future_reservations_url = f"{BASE_URL}/user/future"
+    logger.info(f"Fetching future reservations. URL: GET {future_reservations_url}")
+    response = session.get(future_reservations_url, headers=HEADERS)
     if response.status_code == 200:
         logger.info("Future reservations page fetched successfully")
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -320,7 +325,7 @@ async def get_future_reservations(session):
 
 async def cancel_reservation(session, reservation_id):
     cancel_url = f"{BASE_URL}{reservation_id}/cancel"
-    logger.info(f"Attempting to cancel reservation: {reservation_id}")
+    logger.info(f"Attempting to cancel reservation: {reservation_id}. URL: GET {cancel_url}")
     response = session.get(cancel_url, headers=HEADERS)
     if response.status_code == 200:
         logger.info(f"Cancellation page for {reservation_id} fetched successfully")
@@ -328,6 +333,7 @@ async def cancel_reservation(session, reservation_id):
         token = soup.find("input", {"name": "_token"})
         if token:
             logger.info(f"CSRF token found for {reservation_id}")
+            logger.info(f"Confirming cancellation. URL: POST {cancel_url}")
             confirm_response = session.post(cancel_url, headers=HEADERS, data={
                 '_token': token.get("value"),
                 'confirmed': '1'
