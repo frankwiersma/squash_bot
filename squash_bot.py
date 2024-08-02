@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 from telegram import Update, Bot, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler, JobQueue
+from telegram.error import BadRequest, TimedOut
 import os
 
 from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL, CHAT_ID
@@ -75,6 +76,19 @@ async def login():
     else:
         logger.error(f"Login failed with status code: {response.status_code}")
         return None
+
+async def error_handler(update: object, context: CallbackContext) -> None:
+    logger.error(f"Exception while handling an update: {context.error}")
+
+    if isinstance(context.error, BadRequest):
+        if "Query is too old" in str(context.error):
+            logger.warning("Received a 'Query is too old' error. The bot might be responding too slowly.")
+        else:
+            logger.error(f"BadRequest error: {context.error}")
+    elif isinstance(context.error, TimedOut):
+        logger.error(f"Request timed out: {context.error}")
+    else:
+        logger.error(f"Unexpected error: {context.error}")
 
 async def get_slots(session, date=None):
     date = date or datetime.now().strftime('%Y-%m-%d')
@@ -163,7 +177,14 @@ async def show_main_menu(update: Update, context: CallbackContext):
 async def button(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     logger.info(f"Button pressed with data: {query.data}")
-    await query.answer()
+    
+    try:
+        await query.answer()
+    except BadRequest as e:
+        if "Query is too old" in str(e):
+            logger.warning("Callback query is too old. Continuing with the command execution.")
+        else:
+            raise
 
     if query.data.startswith('command_'):
         command = query.data.split('_')[1]
@@ -411,6 +432,9 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
     application.job_queue.run_once(send_initial_message, when=1, data=CHAT_ID)
+    
+    # Add error handler
+    application.add_error_handler(error_handler)
     
     application.run_polling()
 
