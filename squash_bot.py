@@ -9,7 +9,11 @@ import os
 
 from credentials import TELEGRAM_BOT_TOKEN, USERNAME, PASSWORD, PLAYERS1, PLAYERS2, BASE_URL, CHAT_ID
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 logger = logging.getLogger(__name__)
 
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -259,80 +263,93 @@ END:VCALENDAR"""
     os.remove(ics_file_path)
 
 async def get_future_reservations(session):
-    logger.info("Fetching future reservations.")
+    logger.info("Fetching future reservations")
     response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
     if response.status_code == 200:
-        logger.info("Future reservations fetched successfully.")
+        logger.info("Future reservations page fetched successfully")
         soup = BeautifulSoup(response.content, 'html.parser')
         reservations = []
         
-        # Find the table with class "oneBorder"
         table = soup.find('table', class_='oneBorder')
         if table:
-            # Find all rows in the table body (skip the header rows)
             rows = table.find_all('tr', class_=['odd', 'even'])
+            logger.info(f"Found {len(rows)} reservation rows in the table")
             for row in rows:
                 cols = row.find_all('td')
-                if len(cols) >= 6:  # Ensure we have enough columns
+                if len(cols) >= 6:
                     reservation_link = cols[0].find('a', class_='ajaxlink')
                     if reservation_link and 'href' in reservation_link.attrs:
-                        reservation_id = reservation_link['href']
-                        date = cols[0].text.strip()
-                        weekday = cols[1].text.strip()
-                        start_time = cols[2].text.strip()
-                        court = cols[3].text.strip()
-                        made_on = cols[4].text.strip()
-                        cost = cols[5].text.strip()
-                        
                         reservations.append({
-                            'id': reservation_id,
-                            'date': date,
-                            'weekday': weekday,
-                            'start_time': start_time,
-                            'court': court,
-                            'made_on': made_on,
-                            'cost': cost
+                            'id': reservation_link['href'],
+                            'date': cols[0].text.strip(),
+                            'weekday': cols[1].text.strip(),
+                            'start_time': cols[2].text.strip(),
+                            'court': cols[3].text.strip(),
+                            'made_on': cols[4].text.strip(),
+                            'cost': cols[5].text.strip()
                         })
+                        logger.info(f"Parsed reservation: {reservations[-1]['date']} at {reservations[-1]['start_time']}")
         
-        logger.info(f"Found {len(reservations)} future reservations.")
+        logger.info(f"Total of {len(reservations)} future reservations found")
         return reservations
     else:
-        logger.error(f"Failed to fetch future reservations with status code: {response.status_code}")
+        logger.error(f"Failed to fetch future reservations. Status code: {response.status_code}")
     return []
 
 async def cancel_reservation(session, reservation_id):
     cancel_url = f"{BASE_URL}{reservation_id}/cancel"
+    logger.info(f"Attempting to cancel reservation: {reservation_id}")
     response = session.get(cancel_url, headers=HEADERS)
     if response.status_code == 200:
+        logger.info(f"Cancellation page for {reservation_id} fetched successfully")
         soup = BeautifulSoup(response.content, 'html.parser')
-        confirm_response = session.post(cancel_url, headers=HEADERS, data={
-            '_token': soup.find("input", {"name": "_token"}).get("value"),
-            'confirmed': '1'
-        })
-        return "Reservation cancelled successfully." if confirm_response.status_code == 200 else f"Failed to cancel reservation! Status code: {confirm_response.status_code}"
+        token = soup.find("input", {"name": "_token"})
+        if token:
+            logger.info(f"CSRF token found for {reservation_id}")
+            confirm_response = session.post(cancel_url, headers=HEADERS, data={
+                '_token': token.get("value"),
+                'confirmed': '1'
+            })
+            if confirm_response.status_code == 200:
+                logger.info(f"Reservation {reservation_id} cancelled successfully")
+                return "Reservation cancelled successfully."
+            else:
+                logger.error(f"Failed to cancel reservation {reservation_id}. Status code: {confirm_response.status_code}")
+                return f"Failed to cancel reservation! Status code: {confirm_response.status_code}"
+        else:
+            logger.error(f"CSRF token not found for {reservation_id}")
+            return "Failed to cancel reservation: CSRF token not found"
+    else:
+        logger.error(f"Failed to fetch cancellation page for {reservation_id}. Status code: {response.status_code}")
     return f"Failed to initiate cancellation! Status code: {response.status_code}"
 
 async def cancel_all_command(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
 
+    logger.info("Starting cancel_all_command")
     session = await login()
     if session:
-        logger.info("Canceling all future reservations.")
+        logger.info("Login successful, proceeding to cancel reservations")
         reservations = await get_future_reservations(session)
         if reservations:
+            logger.info(f"Found {len(reservations)} reservations to cancel")
             results = []
             for reservation in reservations:
+                logger.info(f"Attempting to cancel reservation: {reservation['id']}")
                 result = await cancel_reservation(session, reservation['id'])
+                logger.info(f"Cancellation result for {reservation['id']}: {result}")
                 results.append(f"Reservation on {reservation['date']} at {reservation['start_time']}: {result}")
             result_text = "\n".join(results)
             await query.edit_message_text(f"Cancellation results:\n\n{result_text}")
         else:
+            logger.info("No upcoming reservations found")
             await query.edit_message_text("No upcoming reservations found.")
     else:
-        logger.error("Login failed.")
+        logger.error("Login failed in cancel_all_command")
         await query.edit_message_text("Login failed. Unable to cancel reservations.")
     
+    logger.info("Finished cancel_all_command, showing main menu")
     await asyncio.sleep(3)
     await show_main_menu(update, context)
 
@@ -353,36 +370,21 @@ async def show_reservations(update: Update, context: CallbackContext) -> None:
     session = await login()
     if session:
         logger.info("Fetching current reservations.")
-        response = session.get(f"{BASE_URL}/user/future", headers=HEADERS)
-        if response.status_code == 200:
-            logger.info("Current reservations fetched successfully.")
-            soup = BeautifulSoup(response.content, 'html.parser')
-            reservations = soup.select('table.oneBorder tr')
-            if reservations:
-                reservation_text = "Your current reservations:\n\n"
-                for reservation in reservations[2:]:
-                    columns = reservation.find_all('td')
-                    if len(columns) > 0:
-                        date = columns[0].text.strip()
-                        day_of_week = columns[1].text.strip()
-                        start_time = columns[2].text.strip()
-                        court = columns[3].text.strip()
-                        made_on = columns[4].text.strip()
-                        cost = columns[5].text.strip()
-                        reservation_text += (
-                            f"Date: {date}\n"
-                            f"Weekday: {day_of_week}\n"
-                            f"Start Time: {start_time}\n"
-                            f"Court: {court}\n"
-                            f"Made On: {made_on}\n"
-                            f"Cost: {cost}\n\n"
-                        )
-                await query.edit_message_text(reservation_text)
-            else:
-                await query.edit_message_text("You have no upcoming reservations.")
+        reservations = await get_future_reservations(session)
+        if reservations:
+            reservation_text = "Your current reservations:\n\n"
+            for reservation in reservations:
+                reservation_text += (
+                    f"Date: {reservation['date']}\n"
+                    f"Weekday: {reservation['weekday']}\n"
+                    f"Start Time: {reservation['start_time']}\n"
+                    f"Court: {reservation['court']}\n"
+                    f"Made On: {reservation['made_on']}\n"
+                    f"Cost: {reservation['cost']}\n\n"
+                )
+            await query.edit_message_text(reservation_text)
         else:
-            logger.error(f"Failed to retrieve reservations with status code: {response.status_code}")
-            await query.edit_message_text("Failed to retrieve reservations. Please try again later.")
+            await query.edit_message_text("You have no upcoming reservations.")
     else:
         logger.error("Login failed.")
         await query.edit_message_text("Login failed. Please try again later.")
