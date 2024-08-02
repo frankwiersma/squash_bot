@@ -141,21 +141,45 @@ async def reserve(update: Update, context: CallbackContext, page=0) -> None:
     else:
         await update.message.reply_text('📅 Select a date:', reply_markup=keyboard)
 
+async def reserve_on_date(context: CallbackContext):
+    job_data = context.job.data
+    session = job_data['session']
+    selected_slot = job_data['selected_slot']
+    selected_date = job_data['selected_date']
+    query = job_data['query']
+    
+    result, start_time, end_time = await reserve_slot(session, selected_slot, selected_date)
+    await bot.send_message(chat_id=CHAT_ID, text=result)
+    if start_time and end_time:
+        await send_ics_file(query, selected_date, start_time, end_time)
+
 async def reserve_slot_command(update: Update, context: CallbackContext, selected_slot=None) -> None:
     query = update.callback_query
     session = await login()
     if session:
+        selected_date = context.user_data['selected_date']
         if selected_slot:
-            result, start_time, end_time = await reserve_slot(session, selected_slot, context.user_data['selected_date'])
-            await query.edit_message_text(text=result)
-            if start_time and end_time:
-                await send_ics_file(query, context.user_data['selected_date'], start_time, end_time)
+            date_diff = (datetime.strptime(selected_date, '%Y-%m-%d').date() - datetime.now().date()).days
+            if date_diff > 7:
+                # Schedule the reservation
+                context.job_queue.run_once(
+                    reserve_on_date,
+                    when=datetime.now() + timedelta(days=date_diff - 7),
+                    data={'session': session, 'selected_slot': selected_slot, 'selected_date': selected_date, 'query': query}
+                )
+                await query.edit_message_text(f"Reservation scheduled for {selected_date}.")
+            else:
+                # Execute reservation now
+                result, start_time, end_time = await reserve_slot(session, selected_slot, selected_date)
+                await query.edit_message_text(text=result)
+                if start_time and end_time:
+                    await send_ics_file(query, selected_date, start_time, end_time)
         else:
             await query.edit_message_text(text='Please select a slot using the buttons provided after choosing a date and period.')
     else:
         await query.edit_message_text(text="Login failed. Please try again later.")
     await show_main_menu(update, context)
-
+    
 async def send_ics_file(query: CallbackQuery, date: str, start_time: str, end_time: str):
     start_time_ics = datetime.strptime(f"{date} {start_time}", '%Y-%m-%d %H:%M')
     end_time_ics = datetime.strptime(f"{date} {end_time}", '%Y-%m-%d %H:%M')
