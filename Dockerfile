@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Copy requirements file
 COPY requirements.txt .
-
+COPY credentials.py
 # Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
